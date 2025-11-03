@@ -1,0 +1,1432 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../providers/core/app_state_manager.dart';
+import 'package:nardeboun/services/content/cached_content_service.dart';
+import 'package:nardeboun/models/content/subject.dart';
+import 'package:nardeboun/models/content/banner.dart';
+import 'package:nardeboun/utils/grade_utils.dart';
+import '../services/cache/cache_manager.dart';
+import 'dart:async';
+import '../widgets/bubble_nav_bar.dart';
+import '../widgets/banner/cached_banner.dart';
+import '../services/session_service.dart';
+import '../models/auth/registration_stage.dart';
+import 'package:nardeboun/models/content/chapter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:nardeboun/services/mini_request/mini_request_service.dart';
+import 'package:nardeboun/services/image_cache/smart_image_cache_service.dart';
+import '../services/preload/preload_service.dart';
+import '../exceptions/error_handler.dart';
+import '../widgets/common/empty_state_widget.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../utils/logger.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<Subject> _subjects = const [];
+  List<AppBanner> _banners = const [];
+  late final PageController _bannerController;
+  // حذف fallback شبکه؛ فقط از Hive استفاده می‌شود
+  int _bannerIndex = 0;
+  Timer? _bannerTimer;
+
+  // کش برای چک کردن حد مجاز تغییر پایه
+  bool? _isGradeChangeAllowed;
+  DateTime? _lastGradeChangeCheck;
+
+  // مدیریت async operations برای جلوگیری از تداخل navigation
+  bool _isProcessingGradeChange = false;
+  bool _isLoadingSubjects = false;
+  bool _isLoadingBanners = false;
+
+  // تاخیر برای نمایش ویجیت خالی محتوا
+  bool _showEmptyState = false;
+  Timer? _emptyStateTimer;
+
+  bool _isAnyAsyncOperationRunning() {
+    return _isProcessingGradeChange || _isLoadingSubjects || _isLoadingBanners;
+  }
+
+  Future<bool> _checkGradeChangeLimit() async {
+    if (_isGradeChangeAllowed != null &&
+        _lastGradeChangeCheck != null &&
+        DateTime.now().difference(_lastGradeChangeCheck!) <
+            const Duration(minutes: 5)) {
+      return _isGradeChangeAllowed!;
+    }
+
+    // به صورت موقت اجازه تغییر پایه داده می‌شود؛ در صورت نیاز منطق واقعی را در SessionService پیاده‌سازی کنید
+    final isAllowed = true;
+    if (mounted) {
+      setState(() {
+        _isGradeChangeAllowed = isAllowed;
+        _lastGradeChangeCheck = DateTime.now();
+      });
+    }
+    return isAllowed;
+  }
+
+  // لیست پایه‌ها با رشته برای دهم، یازدهم و دوازدهم
+  final List<String> _allGrades = [
+    'اول',
+    'دوم',
+    'سوم',
+    'چهارم',
+    'پنجم',
+    'ششم',
+    'هفتم',
+    'هشتم',
+    'نهم',
+    'دهم - ریاضی',
+    'دهم - تجربی',
+    'دهم - انسانی',
+    'یازدهم - ریاضی',
+    'یازدهم - تجربی',
+    'یازدهم - انسانی',
+    'دوازدهم - ریاضی',
+    'دوازدهم - تجربی',
+    'دوازدهم - انسانی',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthAndRedirect();
+    _bannerController = PageController(viewportFraction: 0.92);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSubjects();
+      _loadBanners();
+      _startBannerTimer();
+      _startPreloading();
+    });
+  }
+
+  /// بررسی احراز هویت و هدایت به صفحه مناسب
+  Future<void> _checkAuthAndRedirect() async {
+    // کمی تاخیر برای اطمینان از init شدن context
+    await Future.delayed(Duration.zero);
+    if (!mounted) return;
+
+    final appState = context.read<AppStateManager>();
+
+    Logger.debug('🔍 [HOME] Checking auth and registration stage...');
+    Logger.debug('🔍 [HOME] isUserAuthenticated: ${appState.isUserAuthenticated}');
+
+    // اگه authenticated نیست، به onboarding بفرست
+    if (!appState.isUserAuthenticated) {
+      Logger.debug('🔍 [HOME] User not authenticated -> redirecting to /onboarding');
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/onboarding', (_) => false);
+      return;
+    }
+
+    final stage = appState.currentRegistrationStage;
+    Logger.debug('🔍 [HOME] Registration stage: ${stage.value}');
+
+    // اگه registration complete نشده، به صفحه مناسب بفرست
+    if (stage != RegistrationStage.completed) {
+      final route = appState.appropriateRoute;
+      Logger.debug('🔍 [HOME] Registration incomplete -> redirecting to $route');
+      Navigator.of(context).pushNamedAndRemoveUntil(route, (_) => false);
+      return;
+    }
+
+    Logger.debug('🔍 [HOME] Auth OK, registration completed -> staying in Home');
+  }
+
+  // Manual banner slider - no auto-sliding
+  void _startBannerTimer() {
+    // Timer removed - banners are now manual
+  }
+
+  /// شروع Preloading برای بهبود سرعت navigation
+  void _startPreloading() {
+    // Preloading در background اجرا می‌شود
+    Future.delayed(const Duration(milliseconds: 500), () async {
+      try {
+        if (!mounted) return;
+        final appState = context.read<AppStateManager>();
+        final profile = appState.authService.currentProfile;
+
+        if (profile?.grade != null) {
+          await PreloadService.instance.preloadForNextNavigation(
+            currentGradeId: profile!.grade!,
+            currentTrackId: _mapFieldOfStudyToTrackId(profile.fieldOfStudy),
+          );
+        }
+      } catch (e) {
+        Logger.error('⚠️ [PRELOAD] Error in background preloading', e);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _bannerTimer?.cancel();
+    _emptyStateTimer?.cancel();
+    _bannerController.dispose();
+    super.dispose();
+  }
+
+  /// بررسی اینکه آیا رشته باید نمایش داده بشه یا نه
+  /// فقط پایه دهم تا دوازدهم رشته دارن
+  bool _shouldShowTrack(String? grade) {
+    if (grade == null) return false;
+
+    // پایه اول تا نهم رشته ندارن
+    final gradesWithoutTrack = [
+      'پایه اول',
+      'پایه دوم',
+      'پایه سوم',
+      'پایه چهارم',
+      'پایه پنجم',
+      'پایه ششم',
+      'پایه هفتم',
+      'پایه هشتم',
+      'پایه نهم',
+    ];
+
+    // اگر پایه اول تا نهم بود، رشته نمایش نده
+    return !gradesWithoutTrack.any(
+      (gradeWithoutTrack) => grade.contains(gradeWithoutTrack),
+    );
+  }
+
+  // Pull-to-refresh removed - data managed by Mini-Request system
+
+  Future<void> _loadSubjects() async {
+    // اگر قبلاً لود شده، دوباره لود نکن
+    if (_subjects.isNotEmpty) {
+      Logger.debug('🚀 [HOME] Subjects already loaded, skipping...');
+      return;
+    }
+
+    try {
+      setState(() => _isLoadingSubjects = true);
+      final appState = context.read<AppStateManager>();
+      final profile = appState.authService.currentProfile;
+      final gradeId = profile?.grade ?? 7;
+      final int? trackId = null;
+
+      // 1) ابتدا از کش بخوان (سریع‌تر)
+      try {
+        final cachedSubjects = await CachedContentService.getSubjectsForUser(
+          gradeId: gradeId,
+          trackId: trackId,
+        );
+        if (cachedSubjects.isNotEmpty && mounted) {
+          setState(() {
+            _subjects = cachedSubjects;
+            _showEmptyState =
+                false; // اگر محتوا پیدا شد، empty state را مخفی کن
+          });
+          _emptyStateTimer?.cancel(); // تایمر را لغو کن
+          Logger.debug('🚀 [HOME] Subjects loaded from cache');
+          // پس‌از نمایش، حافظه فلاتر را نیز warmup کن
+          // در پس‌زمینه تا UI بلاک نشود
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            try {
+              await SmartImageCacheService.instance.precacheBookCovers(
+                context,
+                cachedSubjects,
+              );
+            } catch (e) {
+              Logger.error('⚠️ [HOME] Precache covers error', e);
+            }
+          });
+          return; // از کش لود شد، دیگر نیازی به RPC نیست
+        }
+      } catch (e) {
+        Logger.error('⚠️ [HOME] Cache read error', e);
+      }
+
+      // 3) اگر هنوز محتوا خالی است، تایمر 2 ثانیه را شروع کن
+      if (_subjects.isEmpty && mounted) {
+        _startEmptyStateTimer();
+      }
+
+      // 4) Mini-Request فقط در صورت نیاز (نه در هر navigation)
+      // Mini-Request در AppStateManager مدیریت می‌شود
+    } catch (e) {
+      debugPrint('❌ Error loading subjects quickly: $e');
+      // در صورت خطا هم تایمر را شروع کن
+      if (mounted) {
+        _startEmptyStateTimer();
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingSubjects = false);
+    }
+  }
+
+  /// شروع تایمر برای نمایش ویجیت خالی محتوا
+  void _startEmptyStateTimer() {
+    _emptyStateTimer?.cancel(); // تایمر قبلی را لغو کن
+    _emptyStateTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted && _subjects.isEmpty) {
+        setState(() {
+          _showEmptyState = true;
+        });
+        Logger.debug('⏰ [HOME] Empty state timer triggered - showing empty widget');
+      }
+    });
+    Logger.debug('⏰ [HOME] Empty state timer started (2 seconds)');
+  }
+
+  int? _mapFieldOfStudyToTrackId(String? fieldOfStudy) {
+    if (fieldOfStudy == null) return null;
+    switch (fieldOfStudy) {
+      case 'ریاضی':
+        return 1;
+      case 'تجربی':
+        return 2;
+      case 'انسانی':
+        return 3;
+      default:
+        return null;
+    }
+  }
+
+  String _truncatePersian(String text, int maxChars) {
+    if (text.runes.length <= maxChars) return text;
+    final itr = text.runes.take(maxChars);
+    return '${String.fromCharCodes(itr)}…';
+  }
+
+  Future<void> _loadBanners() async {
+    // اگر قبلاً لود شده، دوباره لود نکن
+    if (_banners.isNotEmpty) {
+      Logger.info('🚀 [HOME] Banners already loaded, skipping...');
+      return;
+    }
+
+    _isLoadingBanners = true;
+
+    try {
+      final appState = context.read<AppStateManager>();
+      final profile = appState.authService.currentProfile;
+
+      if (profile?.grade != null) {
+        final int gradeId = profile!.grade!;
+        final int? trackId = _mapFieldOfStudyToTrackId(profile.fieldOfStudy);
+
+        Logger.info(
+          '🎯 [HOME] Loading banners for grade: $gradeId, track: $trackId',
+        );
+
+        // از CachedContentService بخوان (که از Mini-Request Hive می‌خواند)
+        final banners = await CachedContentService.getActiveBannersForGrade(
+          gradeId: gradeId,
+          trackId: trackId,
+        );
+
+        // فیلتر کردن banner های معتبر
+        final validBanners = banners.where((banner) {
+          return banner.imageUrl.isNotEmpty &&
+              banner.imageUrl.contains('jarkzyebfgpxywlxizeo.supabase.co');
+        }).toList();
+
+        if (mounted) {
+          setState(() {
+            _banners = validBanners;
+          });
+          Logger.info(
+            '🚀 [HOME] Banners loaded from Hive (${validBanners.length} valid)',
+          );
+        }
+      }
+    } catch (e) {
+      Logger.error('Error loading banners', e);
+    } finally {
+      _isLoadingBanners = false;
+    }
+  }
+
+  void _updateUserGrade(String selectedGrade) async {
+    // اول چک کن آیا مجاز هست یا نه
+    final isAllowed = await _checkGradeChangeLimit();
+
+    if (!isAllowed) {
+      if (mounted) {
+        ErrorHandler.show(
+          context,
+          'درخواست تغییر پایه شما بیش از حد مجاز است.\nلطفاً فردا اقدام کنید.',
+        );
+      }
+      return;
+    }
+
+    // چک کن آیا عملیات async در حال انجام هست
+    if (_isAnyAsyncOperationRunning()) {
+      if (mounted) {
+        ErrorHandler.show(context, 'لطفاً صبر کنید تا عملیات قبلی تمام شود.');
+      }
+      return;
+    }
+
+    // اگر مجاز بود، عملیات اصلی رو انجام بده
+    _isProcessingGradeChange = true; // شروع عملیات
+
+    try {
+      if (!mounted) {
+        _isProcessingGradeChange = false;
+        return;
+      }
+      final appState = context.read<AppStateManager>();
+      final profile = appState.authService.currentProfile;
+      if (profile == null || !mounted) {
+        _isProcessingGradeChange = false;
+        return;
+      }
+
+      // selectedGrade حالا شامل پایه و رشته هست (مثل 'دهم - ریاضی')
+      final gradeInt = mapGradeStringToInt(selectedGrade.split(' - ')[0]);
+      String? fieldOfStudy;
+
+      if (selectedGrade.contains(' - ')) {
+        final shortTrack = selectedGrade.split(' - ')[1];
+        // تبدیل نام کوتاه به نام کامل
+        switch (shortTrack) {
+          case 'ریاضی':
+            fieldOfStudy = 'ریاضی و فیزیک';
+            break;
+          case 'تجربی':
+            fieldOfStudy = 'علوم تجربی';
+            break;
+          case 'انسانی':
+            fieldOfStudy = 'ادبیات و علوم انسانی';
+            break;
+        }
+      }
+
+      // پایه و رشته رو آپدیت کن
+      final updates = {
+        'grade': gradeInt,
+        if (fieldOfStudy != null) 'field_of_study': fieldOfStudy,
+      };
+      await appState.authService.updateProfile(updates);
+      if (!mounted) return;
+
+      // پاک کردن تمام cache های مربوط به پایه قبلی
+      AppCacheManager.clearCache(null);
+
+      // پاک کردن subjects و banners برای force reload
+      setState(() {
+        _subjects = [];
+        _banners = [];
+      });
+
+      // 🚀 فراخوانی Mini-Request با force=true برای پایه جدید
+      try {
+        if (gradeInt != null) {
+          await MiniRequestService.instance.checkForUpdates(
+            gradeId: gradeInt,
+            trackId: null,
+            force: true,
+          );
+
+          // 🚀 بعد از Mini-Request، book covers را prefetch کن
+          Logger.info(
+            '🚀 [HOME] Prefetching book covers after grade change...',
+          );
+          await MiniRequestService.instance.prefetchBookCoversForGrade(
+            gradeInt,
+          );
+          Logger.info('✅ [HOME] Book covers prefetch completed');
+        } else {
+          Logger.info('⚠️ [HOME] Cannot prefetch - gradeInt is null');
+        }
+      } catch (e) {
+        Logger.error('❌ Mini-Request failed during grade change', e);
+      }
+
+      // بارگذاری مجدد محتوا
+      await _loadSubjects();
+      if (!mounted) return;
+
+      await _loadBanners();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'پایه با موفقیت تغییر کرد',
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.show(
+          context,
+          'خطا در تغییر پایه: لطفاً دوباره تلاش کنید.',
+        );
+      }
+    } finally {
+      // پایان عملیات
+      _isProcessingGradeChange = false;
+    }
+  }
+
+  /// نمایش دیالوگ انتخاب پایه
+  void _showGradeSelectionDialog(BuildContext context) {
+    final appState = context.read<AppStateManager>();
+    final profile = appState.authService.currentProfile;
+
+    // پایه و رشته فعلی
+    String currentGrade = 'اول';
+    if (profile?.grade != null) {
+      final gradeName = mapGradeIntToString(profile!.grade);
+      final fieldOfStudy = profile.fieldOfStudy;
+
+      if (gradeName != null) {
+        if (fieldOfStudy != null &&
+            ['دهم', 'یازدهم', 'دوازدهم'].contains(gradeName)) {
+          // تبدیل نام کامل به نام کوتاه برای نمایش
+          String shortTrack;
+          switch (fieldOfStudy) {
+            case 'ریاضی و فیزیک':
+              shortTrack = 'ریاضی';
+              break;
+            case 'علوم تجربی':
+              shortTrack = 'تجربی';
+              break;
+            case 'ادبیات و علوم انسانی':
+              shortTrack = 'انسانی';
+              break;
+            default:
+              shortTrack = fieldOfStudy;
+          }
+          currentGrade = '$gradeName - $shortTrack';
+        } else {
+          currentGrade = gradeName;
+        }
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.7,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                // عنوان دیالوگ
+                Text(
+                  'انتخاب پایه تحصیلی',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'IRANSansXFaNum',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+
+                // لیست اسکرولی فقط پایه‌ها
+                Expanded(
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    child: ListView.separated(
+                      itemCount: _allGrades.length,
+                      separatorBuilder: (context, index) =>
+                          const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final grade = _allGrades[index];
+                        final isSelected = grade == currentGrade;
+
+                        return ListTile(
+                          title: Text(
+                            grade,
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                              fontFamily: 'IRANSansXFaNum',
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          selected: isSelected,
+                          selectedTileColor: Theme.of(
+                            context,
+                            // ignore: deprecated_member_use
+                          ).colorScheme.primary.withValues(alpha: 0.1),
+                          onTap: () {
+                            // چک کن آیا عملیات async دیگری در حال انجام هست
+                            if (_isAnyAsyncOperationRunning()) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'لطفاً صبر کنید تا عملیات قبلی تمام شود.',
+                                    textAlign: TextAlign.right,
+                                    textDirection: TextDirection.rtl,
+                                    style: const TextStyle(
+                                      fontFamily: 'IRANSansXFaNum',
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                              return;
+                            }
+
+                            Navigator.of(context).pop();
+                            if (grade != currentGrade) {
+                              // استفاده از addPostFrameCallback برای جلوگیری از Navigator Lock
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  _updateUserGrade(grade);
+                                }
+                              });
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // دکمه بستن
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    child: const Text(
+                      'بستن',
+                      style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleBannerTap(AppBanner banner) async {
+    Logger.info(
+      '🎯 [BANNER-TAP] Banner clicked: id=${banner.id}, type=${banner.bannerType}',
+    );
+
+    // جلوگیری از تداخل عملیات
+    if (_isAnyAsyncOperationRunning()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'لطفاً صبر کنید تا عملیات قبلی تمام شود.',
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(
+              fontFamily: 'IRANSansXFaNum',
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // بررسی نوع بنر
+    if (banner.bannerType == 'external') {
+      Logger.info(
+        '🌐 [BANNER-TAP] External banner, opening URL: ${banner.externalUrl}',
+      );
+      await _handleExternalBannerTap(banner);
+      return;
+    }
+
+    // بنر نوع internal - منطق فعلی
+    if (banner.videoId == null) {
+      Logger.info('⚠️ [BANNER-TAP] Internal banner without videoId');
+      return;
+    }
+
+    Logger.info(
+      '🎬 [BANNER-TAP] Internal banner, navigating to video: ${banner.videoId}',
+    );
+
+    Map<String, dynamic>? videoData; // برای fallback
+    String? embedHtmlOrUrl; // برای fallback
+    NavigatorState? navigator; // ذخیره Navigator برای ARM64 compatibility
+
+    try {
+      if (!mounted) return;
+      setState(() => _isLoadingBanners = true);
+
+      // ذخیره Navigator و AppStateManager قبل از async operations (برای ARM64)
+      if (!mounted) return;
+      navigator = Navigator.of(context);
+      final appState = context.read<AppStateManager>();
+      final profile = appState.authService.currentProfile;
+      
+      if (profile == null || !mounted) {
+        throw Exception('پروفایل کاربر موجود نیست');
+      }
+      
+      final int gradeId = profile.grade ?? 7; // پیش‌فرض هفتم
+      final int? trackId = null; // فعلاً رشته نداریم
+
+      // 1) واکشی اطلاعات ویدیو → lesson_id
+      videoData = await CachedContentService.getVideoById(banner.videoId!);
+      if (videoData == null || !mounted) {
+        throw Exception('اطلاعات ویدیو یافت نشد');
+      }
+      embedHtmlOrUrl =
+          (videoData['embed_html'] as String?) ??
+          (videoData['video_url'] as String?);
+
+      // نوع‌سازی امن برای ARM64 (ممکن است num برگرداند)
+      final dynamic lessonIdRaw = videoData['lesson_id'];
+      final int? lessonId = lessonIdRaw is int 
+          ? lessonIdRaw 
+          : (lessonIdRaw is num ? lessonIdRaw.toInt() : null);
+      
+      if (lessonId == null || !mounted) {
+        throw Exception('شناسه درس برای این ویدیو موجود نیست');
+      }
+
+      // 2) واکشی درس → chapter_id
+      final supabase = Supabase.instance.client;
+      final lessonRow = await supabase
+          .from('lessons')
+          .select()
+          .eq('id', lessonId)
+          .maybeSingle(); // استفاده از maybeSingle برای ARM64
+    
+      if (lessonRow == null || !mounted) {
+        throw Exception('درس یافت نشد');
+      }
+    
+      // نوع‌سازی امن برای ARM64
+      final dynamic chapterIdRaw = lessonRow['chapter_id'];
+      final int? chapterId = chapterIdRaw is int 
+          ? chapterIdRaw 
+          : (chapterIdRaw is num ? chapterIdRaw.toInt() : null);
+    
+      if (chapterId == null || !mounted) {
+        throw Exception('شناسه فصل یافت نشد');
+      }
+
+      // 3) واکشی فصل به‌صورت کامل
+      final chapterRow = await supabase
+          .from('chapters')
+          .select()
+          .eq('id', chapterId)
+          .maybeSingle(); // استفاده از maybeSingle برای ARM64
+    
+      if (chapterRow == null || !mounted) {
+        throw Exception('فصل یافت نشد');
+      }
+    
+      final Chapter chapter = Chapter.fromJson(chapterRow);
+
+      // 4) یافتن Subject مرتبط با subjectOfferId فصل
+      Subject? subject;
+      try {
+        if (!mounted) return;
+        final subjects = await CachedContentService.getSubjectsForUser(
+          gradeId: gradeId,
+          trackId: trackId,
+        );
+        if (!mounted) return;
+        
+        subject = subjects.firstWhere(
+          (s) => s.subjectOfferId == chapter.subjectOfferId,
+          orElse: () => throw Exception('درس مرتبط با این فصل یافت نشد'),
+        );
+      } catch (_) {}
+
+      // 5) اگر از کش پیدا نشد، fallback: از جداول subject_offers و subjects واکشی کن
+      if (subject == null && mounted) {
+        final offerRow = await supabase
+            .from('subject_offers')
+            .select('subject_id')
+            .eq('id', chapter.subjectOfferId)
+            .maybeSingle(); // استفاده از maybeSingle برای ARM64
+        
+        if (offerRow == null || !mounted) {
+          throw Exception('subject_offer یافت نشد');
+        }
+        
+        // نوع‌سازی امن برای ARM64
+        final dynamic subjectIdRaw = offerRow['subject_id'];
+        final int? subjectId = subjectIdRaw is int 
+            ? subjectIdRaw 
+            : (subjectIdRaw is num ? subjectIdRaw.toInt() : null);
+        
+        if (subjectId == null || !mounted) {
+          throw Exception('subject_id نامعتبر است');
+        }
+
+        final subjectRow = await supabase
+            .from('subjects')
+            .select()
+            .eq('id', subjectId)
+            .maybeSingle(); // استفاده از maybeSingle برای ARM64
+        
+        if (subjectRow == null || !mounted) {
+          throw Exception('subject یافت نشد');
+        }
+        
+        subject = Subject.fromJson(
+          subjectRow,
+        ).copyWith(subjectOfferId: chapter.subjectOfferId);
+      }
+
+      if (!mounted) return;
+      // 6) ناوبری به صفحه فصل با Navigator ذخیره شده
+      navigator.pushNamed(
+        '/chapter',
+        arguments: {
+          'chapter': chapter,
+          'subject': subject,
+          'gradeId': gradeId,
+          'trackId': trackId,
+        },
+      );
+    } catch (e, stackTrace) {
+      Logger.error('Error handling banner tap', e, stackTrace);
+      // Fallback: اگر نتوانستیم فصل را پیدا کنیم، مستقیماً ویدیو را پخش کنیم
+      if (!mounted) return;
+      
+      if (embedHtmlOrUrl != null && embedHtmlOrUrl.isNotEmpty) {
+        if (navigator != null) {
+          navigator.pushNamed(
+            '/video-player', 
+            arguments: {'embedHtml': embedHtmlOrUrl}
+          );
+        } else {
+          Navigator.of(context).pushNamed(
+            '/video-player', 
+            arguments: {'embedHtml': embedHtmlOrUrl}
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'خطا در باز کردن صفحه فصل',
+              textAlign: TextAlign.right,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontFamily: 'IRANSansXFaNum',
+                color: Colors.white,
+              ),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingBanners = false);
+    }
+  }
+
+  // متد جدید برای بنرهای external
+  Future<void> _handleExternalBannerTap(AppBanner banner) async {
+    if (banner.externalUrl == null || banner.externalUrl!.isEmpty) {
+      Logger.info('⚠️ [BANNER-TAP] External banner without URL');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'لینک بنر معتبر نیست.',
+            textAlign: TextAlign.right,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      Logger.info('🚀 [BANNER-TAP] Launching URL: ${banner.externalUrl}');
+
+      final Uri url = Uri.parse(banner.externalUrl!);
+      final bool canLaunch = await canLaunchUrl(url);
+
+      if (!canLaunch) {
+        Logger.info('❌ [BANNER-TAP] Cannot launch URL: ${banner.externalUrl}');
+        throw Exception('امکان باز کردن لینک وجود ندارد');
+      }
+
+      final bool launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (launched) {
+        Logger.info('✅ [BANNER-TAP] URL launched successfully');
+      } else {
+        Logger.info('❌ [BANNER-TAP] Failed to launch URL');
+        throw Exception('خطا در باز کردن لینک');
+      }
+    } catch (e) {
+      Logger.error('❌ [BANNER-TAP] Error launching external URL', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'خطا در باز کردن لینک: ${e.toString()}',
+              textAlign: TextAlign.right,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppStateManager>();
+    final userProfile = appState.authService.currentProfile;
+
+    // Convert grade to string for display (فقط پایه)
+    String gradeString = 'پایه ثبت نشده';
+    String? trackString;
+    if (userProfile?.grade != null) {
+      final gradeName = mapGradeIntToString(userProfile!.grade);
+      final trackName = userProfile.fieldOfStudy;
+      gradeString = 'پایه $gradeName';
+      if (trackName != null) {
+        trackString = 'رشته $trackName';
+      }
+    }
+
+    final darkBlue = const Color(0xFF3629B7); // آبی جدید
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+
+        // نمایش دیالوگ خروج
+        final shouldExit = await showDialog<bool>(
+          context: context,
+          builder: (context) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text(
+                'خروج از برنامه',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+              content: const Text(
+                'آیا مطمئن هستید که می‌خواهید از برنامه خارج شوید؟',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'انصراف',
+                    style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text(
+                    'خروج',
+                    style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        if (shouldExit == true) {
+          // فقط برنامه رو به background می‌فرستیم
+          // بدون اینکه session clear بشه
+          try {
+            await SystemChannels.platform.invokeMethod(
+              'SystemNavigator.pop',
+              false,
+            );
+          } catch (e) {
+            // fallback: minimize کردن برنامه
+            SystemNavigator.pop();
+          }
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                darkBlue, // نصف بالا آبی
+                Colors.white, // نصف پایین سفید
+              ],
+              stops: const [0.5, 0.5], // خط تقسیم دقیقاً وسط
+            ),
+          ),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Column(
+              children: [
+                // ١. هدر آبی در بالا
+                _buildTopBar(
+                  context,
+                  userProfile?.firstName ?? 'کاربر',
+                  userProfile?.lastName ?? '',
+                  userProfile?.gender ?? '',
+                  gradeString,
+                  trackString,
+                ),
+
+                // ٢. بخش اصلی که ظاهر همپوشانی را ایجاد می‌کند
+                Expanded(child: _buildScrollableContent(darkBlue)),
+              ],
+            ),
+          ),
+        ),
+        bottomNavigationBar: BubbleNavBar(
+          currentIndex: 0,
+          onTap: (i) {
+            if (i == 0) {
+              // در خانه هستیم
+            } else if (i == 1) {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pushNamed('/provincial-sample');
+            } else if (i == 2) {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pushNamed('/step-by-step');
+            } else if (i == 3) {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pushNamed('/edit-profile');
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar(
+    BuildContext context,
+    String firstName,
+    String lastName,
+    String gender,
+    String? grade,
+    String? track,
+  ) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8, right: 16, left: 16, bottom: 20),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // لوگو + نام برند در سمت راست (ترتیب صحیح برای RTL)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset('assets/images/icon/nardeboun.png', height: 40),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'نردبون',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // فقط پایه کلیک پذیر
+                    GestureDetector(
+                      onTap: () => _showGradeSelectionDialog(context),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            grade ?? 'پایه ثبت نشده',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.keyboard_arrow_down,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // رشته فقط نمایشی (فقط برای پایه دهم تا دوازدهم)
+                    if (track != null && _shouldShowTrack(grade)) ...{
+                      const SizedBox(height: 2),
+                      Text(
+                        track,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    },
+                  ],
+                ),
+              ],
+            ),
+
+            const Spacer(),
+
+            // پروفایل کاربر در سمت چپ (ترتیب صحیح برای RTL)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _truncatePersian('$firstName $lastName', 40),
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: ClipOval(
+                    child: Padding(
+                      padding: const EdgeInsets.all(2.0),
+                      child: ClipOval(
+                        child: Image.asset(
+                          _avatarPathForGender(gender),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Image.asset(
+                            'assets/images/avatars/male.png',
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScrollableContent(Color darkBlue) {
+    return Container(
+      color: darkBlue,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 24),
+              _buildBannerSlider(context),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: _buildSubjectsGrid(context),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBannerSlider(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // فیلتر کردن بنرهای معتبر (با URL صحیح)
+    final validBanners = _banners.where((banner) {
+      final isValid =
+          banner.imageUrl.isNotEmpty &&
+          banner.imageUrl.contains('jarkzyebfgpxywlxizeo.supabase.co');
+
+      if (!isValid) {
+        Logger.debug(
+          '🚫 [BANNER] Filtered out invalid banner ${banner.id}: ${banner.imageUrl}',
+        );
+      }
+
+      return isValid;
+    }).toList();
+
+    Logger.info(
+      '🎯 [BANNER] Total banners: ${_banners.length}, Valid: ${validBanners.length}',
+    );
+
+    if (validBanners.isEmpty) {
+      Logger.info('🚫 [BANNER] No valid banners, hiding slider');
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      height: 200,
+      child: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _bannerController,
+              onPageChanged: (i) => setState(() => _bannerIndex = i),
+              itemCount: validBanners.length,
+              itemBuilder: (context, index) {
+                final banner = validBanners[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: CachedBanner(
+                    banner: banner,
+                    onTap: () => _handleBannerTap(banner),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(validBanners.length, (i) => i).map((i) {
+              final active = i == _bannerIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                width: active ? 20 : 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: active
+                      ? theme.colorScheme.primary
+                      : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubjectsGrid(BuildContext context) {
+    // اگر در حال لودینگ است، loading indicator نمایش بده
+    if (_isLoadingSubjects) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    // اگر لیست خالی باشد و تایمر تمام شده، Empty State Widget نمایش بده
+    if (_subjects.isEmpty && _showEmptyState) {
+      return EmptyStateWidgets.noGradeContent(context);
+    }
+
+    // اگر لیست خالی باشد اما تایمر هنوز تمام نشده، loading indicator نمایش بده
+    if (_subjects.isEmpty && !_showEmptyState) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    Theme.of(context);
+    return GridView.builder(
+      shrinkWrap: true, // برای کار کردن داخل SingleChildScrollView
+      physics:
+          const NeverScrollableScrollPhysics(), // برای جلوگیری از اسکرول تو در تو
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: _subjects.length,
+      itemBuilder: (context, index) {
+        final s = _subjects[index];
+        return _SubjectCard(
+          subject: s,
+          onTap: () async {
+            // Resolve gradeId from name for now (simple):
+            final appState = context.read<AppStateManager>();
+            final profile = appState.authService.currentProfile;
+            final gradeId = profile?.grade ?? 7;
+            final trackId = null;
+
+            // ذخیره آخرین درس انتخاب شده در Hive
+            await SessionService.instance.saveLastSelectedSubject(s.toJson());
+            await SessionService.instance.saveLastSelectedTrackId(trackId);
+
+            // Check if widget is still mounted before navigation
+            if (!context.mounted) return;
+
+            Navigator.of(context).pushNamed(
+              '/subject',
+              arguments: {'subject': s, 'gradeId': gradeId, 'trackId': trackId},
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SubjectCard extends StatelessWidget {
+  final Subject subject;
+  final VoidCallback? onTap;
+  const _SubjectCard({required this.subject, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    context.read<AppStateManager>();
+
+    String buildIconAssetPath() {
+      // ساده: مستقیماً از iconPath دیتابیس استفاده کن
+      if (subject.iconPath.isNotEmpty) {
+        // اگر iconPath کامل است، مستقیماً استفاده کن
+        if (subject.iconPath.startsWith('assets/')) {
+          return subject.iconPath;
+        }
+        // اگر فقط نام فایل است، مسیر کامل بساز
+        final path = 'assets/images/icon-darsha/${subject.iconPath}';
+        return path;
+      }
+
+      // Fallback: اگر iconPath خالی بود، از slug استفاده کن
+      final fallbackPath = 'assets/images/icon-darsha/${subject.slug}.png';
+      return fallbackPath;
+    }
+
+    final iconAsset = buildIconAssetPath();
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(
+          0xFFF9FAFB,
+        ), // هماهنگ‌سازی رنگ با پس‌زمینه نوار ناوبری
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Image.asset(
+                  iconAsset,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    // اگر عکس پیدا نشد، یک آیکون پیش‌فرض نمایش بده
+                    return const Icon(
+                      Icons.book_rounded,
+                      size: 48,
+                      color: Colors.grey,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subject.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _avatarPathForGender(String gender) {
+  final g = gender.toLowerCase();
+  if (g == 'male' || g == 'm' || g == 'آقا' || g == 'مرد' || g == 'پسر') {
+    return 'assets/images/avatars/male.png';
+  }
+  if (g == 'female' || g == 'f' || g == 'خانم' || g == 'زن' || g == 'دختر') {
+    return 'assets/images/avatars/female.png';
+  }
+  // پیش‌فرض: مرد
+  return 'assets/images/avatars/male.png';
+}

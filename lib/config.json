@@ -1,0 +1,63 @@
+{
+  "_comment_themeMode": "مقادیر مجاز: light (روشن), dark (تاریک), system (پیروی از سیستم)",
+  "themeMode": "light",
+
+  "_comment_devMode": "true = حالت توسعه (کد OTP پیش‌فرض 000000، عدم ارسال SMS), false = حالت تولید (ارسال SMS واقعی)",
+  "devMode": false,
+
+  "_comment_debugCheckModeBanner": "true = نمایش بنر دیباگ در گوشه بالا راست, false = مخفی کردن بنر دیباگ",
+  "debugCheckModeBanner": false,
+
+  "_comment_sessionTimeoutDays": "مدت انقضای نشست کاربر (بر حسب روز)",
+  "sessionTimeoutDays": 30,
+
+  "_comment_initialRouteForDev": "Available routes: /auth, /home, /verify-otp, /edit-profile, /onboarding, /onboarding/step1, /onboarding/step2, /onboarding/success, /subject, /chapter, /provincial-sample, /step-by-step (leave empty for auto routing based on registration stage)",
+  "initialRouteForDev": "",
+
+  "_comment_portraitLock": "true = قفل کردن جهت عمودی برای کل اپلیکیشن, false = مجاز کردن چرخش آزاد (عرضی و عمودی)",
+  "portraitLock": true,
+
+  "_comment_connectivityCheckDelay": "تاخیر اولیه برای چک connectivity بر حسب ثانیه (برای جلوگیری از نمایش خطای disconnect در ابتدای باز شدن اپ)",
+  "connectivityCheckDelay": 10,
+
+  "_comment_pdfScrollSpeed": "سرعت اسکرول PDF (مقادیر: 1.0 = عادی, 1.5 = سریع, 2.0 = خیلی سریع, 0.5 = آهسته)",
+  "pdfScrollSpeed": 4.0,
+
+  "_comment_reportErrorUrl": "آدرس وب‌سایت برای گزارش خطا (باز شدن در مرورگر)",
+  "reportErrorUrl": "https://nardeboun.ir/report/",
+
+  "_comment_whatsappNumber": "شماره واتساپ پشتیبانی (شامل + و کد کشور)",
+  "whatsappNumber": "+989981654321",
+
+  "_comment_pullToRefreshEnabled": "true = فعال کردن قابلیت Pull-to-Refresh, false = غیرفعال کردن",
+  "pullToRefreshEnabled": false,
+
+  "_comment_maxRefreshCount": "حداکثر تعداد رفرش مجاز در طول استفاده از اپلیکیشن (در صورت فعال بودن Pull-to-Refresh)",
+  "maxRefreshCount": 10,
+
+  "_comment_networkErrorDelayAfterDisconnect": "تاخیر قبل از نمایش پیام قطع اینترنت بعد از disconnect (ثانیه)",
+  "networkErrorDelayAfterDisconnect": 10,
+
+  "_comment_networkBackgroundCheckIntervalSeconds": "بازه زمانی چک سبک پس‌زمینه‌ای هنگام انتظار تعامل کاربر (ثانیه)",
+  "networkBackgroundCheckIntervalSeconds": 1,
+
+  "_comment_networkInternetCheckTimeoutSeconds": "تایم‌اوت درخواست سبک اینترنت برای چک اتصال واقعی (ثانیه)",
+  "networkInternetCheckTimeoutSeconds": 2,
+
+  "_comment_miniRequestIntervalHours": "فاصله زمانی بررسی محتوای جدید توسط Mini-Request (ساعت)",
+  "miniRequestIntervalHours": 1,
+
+  "_comment_miniRequestEnabled": "فعال/غیرفعال بودن سیستم Mini-Request",
+  "miniRequestEnabled": true,
+
+  "_comment_miniRequestOnLaunch": "آیا در هنگام باز شدن برنامه Mini-Request اجرا شود؟",
+  "miniRequestOnLaunch": true,
+
+  "_comment_otpLength": "طول کد OTP (تعداد ارقام)",
+  "otpLength": 4,
+  "_comment_otpMaxAttempts": "حداکثر تعداد دفعات مجاز برای درخواست کد قبل از بن موقت",
+  "otpMaxAttempts": 5,
+  "_comment_otpBanHours": "مدت زمان بن پس از عبور از حداکثر تلاش‌ها (ساعت)",
+  "otpBanHours": 3
+
+}

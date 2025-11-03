@@ -1,0 +1,90 @@
+🧠 AI Agent Development Rules (project_rules.md)
+These rules define the behavioral and operational boundaries for the AI agent throughout the development lifecycle of this project. They are non-negotiable and must be strictly followed at all times.
+
+1. Simplicity First — Avoid Complexity
+The agent must prioritize simplicity in all aspects of the project. This includes:
+
+Using the simplest possible methods, logic structures, and coding patterns.
+
+Avoiding complex abstractions, over-engineered solutions, or unnecessary optimization.
+
+Preferring clarity and maintainability over cleverness or novelty. The goal is to keep the project understandable, lightweight, and easy to iterate.
+
+2. No Unapproved Changes Outside the Target Scope
+When the user requests a change to a specific part of the project, the agent must:
+
+Limit its modifications strictly to the requested scope.
+
+Avoid making automatic or unsolicited changes to unrelated parts of the project.
+
+Never assume permission to refactor, optimize, or restructure other components unless explicitly instructed. This ensures the user’s focus remains uninterrupted and the project evolves in a controlled manner.
+
+3. Planning Before Execution — Do Not Auto-Implement Plans
+When the agent is asked to generate a .md plan outlining steps or stages:
+
+The purpose is review and validation, not immediate execution.
+
+The agent must wait for explicit user approval before implementing any part of the plan.
+
+Plans are drafts — they may contain errors, omissions, or require revision. Executing a plan prematurely risks deploying flawed logic and undermines the user’s strategic control.
+
+4. Respect Language and Cultural Identity
+The user communicates in Persian (Farsi), and the agent must:
+
+Always respond in Persian, using right-to-left alignment.
+
+Never switch to English unless explicitly requested.
+
+Never disrespect, ignore, or override the user’s linguistic or cultural preferences. This includes font, layout, and tone. Any deviation is considered a violation of trust.
+
+5. No Autonomous Execution — Use Flutter Analyze Only
+During development:
+
+The agent must not run the project autonomously or trigger builds without permission.
+
+The only permitted diagnostic tool is flutter analyze.
+
+If flutter analyze reports errors or warnings, the agent must continue analyzing and refining until all issues are resolved. Running the project is a manual step controlled by the user — not the agent.
+
+6. Do Not Finalize Without Explicit Approval
+For any feature, module, or component under development:
+
+The agent must not mark it as complete or finalize it without user confirmation.
+
+The agent should continuously ask questions, offer suggestions, and seek feedback.
+
+Only when the user explicitly approves completion may the agent proceed to finalize. This ensures collaborative decision-making and avoids premature closure.
+
+7. Typography Rules for Persian Text
+All Persian content — including:
+
+Text boxes
+
+Form fields
+
+Labels Must follow these rules:
+
+Right-aligned (RTL)
+
+Use the IranSans font consistently across the entire application. No exceptions. Any Persian text rendered without this font or alignment is considered a design flaw.
+
+8. Color Consistency — Follow Central Theme
+All colors used in the application must:
+
+Be derived from the central theme defined by the user.
+
+Be consistent across all components and screens.
+
+Avoid any “floating” or undefined colors that do not belong to the theme. No color should be applied arbitrarily or outside the approved palette.
+
+Try not to delete comments or print statements. In Flutter, use cascade operators when you can. If in dart you do print add a [FunctionName] to it, like the actual string for the function name. Try to have a lot of comments, when refactoring or creating code take the chance to add as many comments as you can and is prudent, with multi-line, fancy formatting if necessary for explanations. If you are unsure about names or member variables, feel free to remind me/ask me for full codebase context.
+
+If we are designing a UI, try to use Apple's Human Interface Guidelines, let's make something sleek, sexy, modern, and easy to use if we are doing UI stuff, with nice animations too if we can. Really modern and sexy sleek minimal apple style MacOS style UI design, make it sexy, sleek. Animations, UI. Modern, amazing STEVE JOBS LEVEL lets GO! Always reaffirm to me that we are doing it using Apple Guidelines and how we used them in this design (if we are doing UI).
+
+When adding to or refactoring code, especially visual elements, unless I specify we are changing the functionality, try your best to maintain the exact same functionality just as it was, just with edits or new bits. PLEASE BE SURE NOT TO CHANGE FUNCTIONALITY SERIOUSLY, DOUBLE CHECK YOURSELF. Do not remove stuff just for the sake of removing it unless I ASK when we are refactoring! So you don't break things uninentionally.
+
+useGoogleFonts: false needs to happen anywhere on styles where we use Sfpro.
+
+Please do NOT make random guesses on variable names or include paths. Always reference the codebase to see if we have something existing before deciding to randomly make new classes or make up member variable names. DO not hallucinate variable names, feel free to ask if you need context for a file.
+
+If you are the composer, don't be afraid to search the codebase for files you need to.

@@ -1,0 +1,58 @@
+/* استایل‌های پنل نردبون */
+.wrap {
+    max-width: 1000px;
+}
+
+.form-table th {
+    width: 200px;
+    font-weight: 600;
+}
+
+.duration-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.duration-inputs input {
+    text-align: center;
+}
+
+.duration-inputs span {
+    font-weight: bold;
+    color: #333;
+}
+
+#total-seconds {
+    font-weight: bold;
+    color: #0073aa;
+}
+
+/* استایل برای نمایش بهتر در موبایل */
+@media (max-width: 782px) {
+    .form-table th {
+        width: 100%;
+        display: block;
+    }
+    
+    .duration-inputs {
+        flex-wrap: wrap;
+    }
+}
+
+/* استایل‌های وضعیت */
+.updated {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+    padding: 12px;
+    border-radius: 4px;
+}
+
+.error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 12px;
+    border-radius: 4px;
+}
