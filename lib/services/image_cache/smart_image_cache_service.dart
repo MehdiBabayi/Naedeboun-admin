@@ -3,13 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
-import '../mini_request/mini_request_service.dart';
-import '../../models/content/banner.dart';
 import '../../models/content/subject.dart';
 import '../../utils/logger.dart';
 // import '../../models/content/book_cover.dart';
 
-/// 📸 سرویس کش هوشمند برای تصاویر (Book Covers & Banners)
+/// 📸 سرویس کش هوشمند برای تصاویر (Book Covers)
 /// Philosophy: Keep It Simple & Stupid (KISS)
 class SmartImageCacheService {
   static final SmartImageCacheService _instance =
@@ -26,12 +24,6 @@ class SmartImageCacheService {
     try {
       Logger.info('📸 [IMG-CACHE] Initializing...');
       _box = await Hive.openBox(_boxName);
-
-      // Listen to Mini-Request banner events
-      MiniRequestService.instance.onNewBanners.listen(
-        _onNewBanners,
-        onError: (e) => Logger.error('❌ [IMG-CACHE] Event error', e),
-      );
 
       Logger.info('🔧 [IMG-CACHE] Initialized');
     } catch (e) {
@@ -188,79 +180,6 @@ class SmartImageCacheService {
     
     // 3. بعد از دانلود، از Hive بخوان
     return _box?.get(key) as Uint8List?;
-  }
-
-  // ========== BANNERS ==========
-
-  /// دریافت عکس Banner
-  Future<Uint8List?> getBanner(int bannerId, String imageUrl) async {
-    final key = 'banners/banner_$bannerId.jpg';
-
-    // 1. چک Hive
-    final cached = _box?.get(key) as Uint8List?;
-    if (cached != null) {
-      Logger.info('🔧 [IMG-CACHE] Banner hit: $bannerId');
-      return cached;
-    }
-
-    Logger.info('⚠️ [IMG-CACHE] Banner miss: $bannerId');
-
-    // 2. دانلود در پس‌زمینه
-    _downloadBanner(bannerId, imageUrl);
-
-    return null;
-  }
-
-  /// دانلود Banner
-  Future<void> _downloadBanner(int bannerId, String imageUrl) async {
-    final key = 'banners/banner_$bannerId.jpg';
-
-    // Prevent duplicate downloads
-    if (_downloading[key] == true) {
-      Logger.info('⏳ [IMG-CACHE] Already downloading: $bannerId');
-      return;
-    }
-
-    _downloading[key] = true;
-
-    try {
-      Logger.info('⬇️ [IMG-CACHE] Downloading banner $bannerId from: $imageUrl');
-
-      final response = await http
-          .get(Uri.parse(imageUrl))
-          .timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        await _box?.put(key, response.bodyBytes);
-        Logger.info(
-          '🔧 [IMG-CACHE] Banner cached: $bannerId (${response.bodyBytes.length} bytes)',
-        );
-      } else {
-        Logger.info('❌ [IMG-CACHE] Banner download failed: ${response.statusCode}');
-      }
-    } catch (e) {
-      Logger.error('❌ [IMG-CACHE] Banner error', e);
-    } finally {
-      _downloading.remove(key);
-    }
-  }
-
-  /// Event listener برای بنرهای جدید
-  void _onNewBanners(List<AppBanner> banners) async {
-    Logger.info('🎨 [IMG-CACHE] New banners event: ${banners.length}');
-
-    for (final banner in banners) {
-      final key = 'banners/banner_${banner.id}.jpg';
-
-      // اگه کش نداریم، دانلود کن
-      if (!(_box?.containsKey(key) ?? false)) {
-        await _downloadBanner(banner.id, banner.imageUrl);
-        // تأخیر کوچیک برای جلوگیری از فشار به سرور
-        await Future.delayed(const Duration(milliseconds: 500));
-      } else {
-        Logger.info('✅ [IMG-CACHE] Banner already cached: ${banner.id}');
-      }
-    }
   }
 
   // ========== UTILITIES ==========

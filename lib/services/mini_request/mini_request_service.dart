@@ -7,7 +7,6 @@ import '../../models/mini_request/content_counts_model.dart';
 import '../../models/mini_request/mini_request_state.dart';
 import '../../models/content/step_by_step_pdf.dart';
 import '../../models/content/provincial_sample_pdf.dart';
-import '../../models/content/banner.dart';
 import '../../models/content/subject.dart';
 import '../../models/content/chapter.dart';
 import '../../models/content/lesson.dart';
@@ -38,12 +37,8 @@ class MiniRequestService {
   final _progressController = StreamController<double>.broadcast();
   final _stateController = StreamController<MiniRequestState>.broadcast();
 
-  // 🔔 Stream برای بنرهای جدید (برای Smart Image Cache)
-  final _newBannersController = StreamController<List<AppBanner>>.broadcast();
-
   Stream<double> get downloadProgress => _progressController.stream;
   Stream<MiniRequestState> get state => _stateController.stream;
-  Stream<List<AppBanner>> get onNewBanners => _newBannersController.stream;
 
   MiniRequestState _currentState = MiniRequestState.idle;
 
@@ -246,7 +241,6 @@ class MiniRequestService {
         await _loadStepByStepPdfsMetadata(grade, track);
         await _loadProvincialPdfsMetadata(grade, track);
         await _loadTeachersMetadata(grade, track);
-        await _loadBannersMetadata(grade, track);
 
         // Store last_counts
         if (newCounts != null) {
@@ -279,7 +273,6 @@ class MiniRequestService {
         await _loadStepByStepPdfsMetadata(grade, track);
         await _loadProvincialPdfsMetadata(grade, track);
         await _loadTeachersMetadata(grade, track);
-        await _loadBannersMetadata(grade, track);
 
         _currentState = MiniRequestState.completed;
         _stateController.add(_currentState);
@@ -522,47 +515,6 @@ class MiniRequestService {
       Logger.info('✅ [MINI-REQUEST] Teachers cached: ${idToName.length} items');
     } catch (e) {
       Logger.error('❌ [MINI-REQUEST] Error loading teachers metadata: $e');
-    }
-  }
-
-  /// دریافت و کش کردن بنرها (metadata) برای نمایش سریع
-  Future<void> _loadBannersMetadata(int grade, int? track) async {
-    try {
-      Logger.info('🎨 [MINI-REQUEST] Loading banners metadata: grade=$grade track=$track');
-
-      var query = _supabase
-          .from('banners')
-          .select('*')
-          .eq('grade_id', grade)
-          .eq('active', true);
-
-      // فیلتر بر اساس track (مانند منطق BannerService)
-      if (track != null) {
-        query = query.or('track_id.is.null,track_id.eq.$track');
-      } else {
-        query = query.isFilter('track_id', null);
-      }
-
-      final response =
-          await query.order('display_order', ascending: true) as List<dynamic>;
-
-      Logger.debug('📊 [MINI-REQUEST] Banners response: ${response.length} items');
-
-      final list = response
-          .map((j) => AppBanner.fromJson(Map<String, dynamic>.from(j)))
-          .toList();
-
-      // ذخیره در Hive
-      final boxName = _getBoxName(grade, track);
-      final box = await Hive.openBox(boxName);
-      await box.put(
-        'banners',
-        jsonEncode(list.map((b) => b.toJson()).toList()),
-      );
-
-      Logger.info('✅ [MINI-REQUEST] Banners cached: ${list.length} items');
-    } catch (e) {
-      Logger.error('❌ [MINI-REQUEST] Error caching banners: $e');
     }
   }
 
@@ -880,7 +832,6 @@ class MiniRequestService {
     stopTimer();
     _progressController.close();
     _stateController.close();
-    _newBannersController.close(); // 🔔 Close banner stream
     _isInitialized = false;
     _logger.log('Service disposed', LogLevel.info);
   }

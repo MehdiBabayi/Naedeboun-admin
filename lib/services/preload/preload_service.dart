@@ -11,7 +11,6 @@ class PreloadService {
   static PreloadService get instance => _instance;
 
   final Set<String> _preloadedSubjects = {};
-  final Set<int> _preloadedBanners = {};
 
   /// Preload subjects برای grade مشخص
   Future<void> preloadSubjectsForGrade({
@@ -43,44 +42,14 @@ class PreloadService {
     }
   }
 
-  /// Preload banners برای grade مشخص
-  Future<void> preloadBannersForGrade({
-    required int gradeId,
-    int? trackId,
-  }) async {
-    try {
-      Logger.info('🚀 [PRELOAD] Preloading banners for grade: $gradeId');
-
-      // Preload banners
-      final banners = await CachedContentService.getActiveBannersForGrade(
-        gradeId: gradeId,
-        trackId: trackId,
-      );
-
-      // Preload banner images
-      for (final banner in banners) {
-        _preloadedBanners.add(banner.id);
-        SmartImageCacheService.instance.getBanner(banner.id, banner.imageUrl);
-      }
-
-      Logger.info('✅ [PRELOAD] Preloaded ${banners.length} banners');
-    } catch (e) {
-      Logger.error('❌ [PRELOAD] Error preloading banners', e);
-    }
-  }
 
   /// Preload content برای navigation بعدی
   Future<void> preloadForNextNavigation({
     required int currentGradeId,
     int? currentTrackId,
   }) async {
-    // Preload subjects and banners for current grade
+    // Preload subjects for current grade
     await preloadSubjectsForGrade(
-      gradeId: currentGradeId,
-      trackId: currentTrackId,
-    );
-
-    await preloadBannersForGrade(
       gradeId: currentGradeId,
       trackId: currentTrackId,
     );
@@ -91,14 +60,9 @@ class PreloadService {
     return _preloadedSubjects.contains(bookCoverPath);
   }
 
-  bool isBannerPreloaded(int bannerId) {
-    return _preloadedBanners.contains(bannerId);
-  }
-
   /// پاک کردن preload cache
   void clearPreloadCache() {
     _preloadedSubjects.clear();
-    _preloadedBanners.clear();
     Logger.info('🧹 [PRELOAD] Preload cache cleared');
   }
 }

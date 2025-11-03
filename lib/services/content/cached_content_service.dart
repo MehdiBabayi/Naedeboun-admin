@@ -3,12 +3,10 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../cache/cache_manager.dart';
 import 'content_service.dart';
-import 'banner_service.dart';
 import '../../models/content/subject.dart';
 import '../../models/content/chapter.dart';
 import '../../models/content/lesson.dart';
 import '../../models/content/lesson_video.dart';
-import '../../models/content/banner.dart';
 import '../../models/content/step_by_step_pdf.dart';
 import '../../models/content/provincial_sample_pdf.dart';
 import '../../utils/logger.dart';
@@ -19,7 +17,6 @@ class CachedContentService {
   static final ContentService _contentService = ContentService(
     Supabase.instance.client,
   );
-  static final BannerService _bannerService = BannerService();
   static final _supabase = Supabase.instance.client;
 
   /// دریافت نام Box برای grade مشخص (Mini-Request)
@@ -193,43 +190,6 @@ class CachedContentService {
     );
   }
 
-  /// دریافت بنرهای فعال از Mini-Request Hive Box
-  static Future<List<AppBanner>> getActiveBannersForGrade({
-    required int gradeId,
-    int? trackId,
-  }) async {
-    final boxName = _getMiniRequestBoxName(gradeId, trackId);
-
-    Logger.info('🚀 [MINI-REQUEST] Loading banners from Hive: $boxName');
-
-    try {
-      final box = await Hive.openBox(boxName);
-      final bannersJson = box.get('banners');
-
-      if (bannersJson == null) {
-        Logger.info('⚠️ [MINI-REQUEST] No banners in Hive');
-        return [];
-      }
-
-      final List<dynamic> decoded = jsonDecode(bannersJson);
-      Logger.info('✅ [MINI-REQUEST] Loaded ${decoded.length} banners from Hive');
-      return decoded.map((j) => AppBanner.fromJson(j)).toList();
-    } catch (e) {
-      Logger.error('❌ [MINI-REQUEST] Error reading banners from Hive', e);
-      return [];
-    }
-  }
-
-  /// دریافت ویدیو بر اساس ID با Cache کوتاه
-  static Future<Map<String, dynamic>?> getVideoById(int videoId) async {
-    final cacheKey = 'video_id_$videoId';
-
-    return await AppCacheManager.getCachedDataWithAutoTTL(
-      cacheKey,
-      () => _bannerService.getVideoById(videoId),
-      const Duration(minutes: 15), // کوتاه مدت برای ID ها
-    );
-  }
 
   // ========== STEP-BY-STEP PDF METHODS ==========
 
@@ -433,19 +393,6 @@ class CachedContentService {
     AppCacheManager.clearCache(cacheKey);
   }
 
-  /// پاک کردن Cache بنرها
-  static Future<void> refreshBanners() async {
-    Logger.info('🔄 Refreshing banners cache...');
-    AppCacheManager.clearCache('banners_active');
-    AppCacheManager.clearCache('banners_all');
-  }
-
-  /// پاک کردن Cache بنرهای خاص برای پایه و رشته
-  static Future<void> refreshBannersForGrade(int gradeId, int? trackId) async {
-    final cacheKey = 'banners_active_${gradeId}_$trackId';
-    Logger.info('🔄 Refreshing banners cache for Grade: $gradeId, Track: $trackId');
-    AppCacheManager.clearCache(cacheKey);
-  }
 
   /// پاک کردن Cache PDF‌های گام‌به‌گام
   static Future<void> refreshStepByStepPdfs() async {
@@ -486,13 +433,6 @@ class CachedContentService {
     );
   }
 
-  static bool hasBannersCache() {
-    return AppCacheManager.hasValidCache(
-      'banners_active',
-      AppCacheManager.bannersCacheTime,
-    );
-  }
-
   /// دریافت آمار و اطلاعات Cache
   static Map<String, dynamic> getCacheInfo() {
     return AppCacheManager.getCacheStats();
@@ -509,7 +449,6 @@ class CachedContentService {
       'subjects' => 'subjects_${id ?? 'unknown'}_unknown',
       'chapters' => 'chapters_${id ?? 'unknown'}',
       'videos' => 'videos_${id ?? 'unknown'}',
-      'banners' => 'banners_active',
       _ => 'unknown',
     };
 

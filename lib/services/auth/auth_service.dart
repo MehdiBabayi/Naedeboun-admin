@@ -521,6 +521,22 @@ class AuthService extends ChangeNotifier {
       _currentUser = UserModel.fromJson(profileJson);
       _currentProfile = UserProfile.fromJson(profileJson);
 
+      // چک ادمین بودن کاربر برای دسترسی به پنل ادمین
+      Logger.info("🔍 [AUTH] Checking user role: ${_currentProfile?.userRole}");
+      if (_currentProfile?.userRole != 'admin') {
+        Logger.error(
+          "❌ [AUTH] User is not admin. Role: ${_currentProfile?.userRole}",
+        );
+        // فقط session data را پاک کن و profile را نگه دار
+        await _clearSessionDataOnly();
+        _currentUser = null;
+        _currentProfile = null;
+        notifyListeners();
+        throw AuthServiceException(
+          'شما اجازه دسترسی به پنل ادمین را ندارید. لطفا با شماره تلفن ادمین وارد شوید.',
+        );
+      }
+
       notifyListeners();
       Logger.info("✅ [DEBUG] OTP verification completed successfully");
 

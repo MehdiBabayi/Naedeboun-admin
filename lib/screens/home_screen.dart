@@ -4,12 +4,10 @@ import 'package:provider/provider.dart';
 import '../providers/core/app_state_manager.dart';
 import 'package:nardeboun/services/content/cached_content_service.dart';
 import 'package:nardeboun/models/content/subject.dart';
-import 'package:nardeboun/models/content/banner.dart';
 import 'package:nardeboun/utils/grade_utils.dart';
 import '../services/cache/cache_manager.dart';
 import 'dart:async';
 import '../widgets/bubble_nav_bar.dart';
-import '../widgets/banner/cached_banner.dart';
 import '../services/session_service.dart';
 import '../models/auth/registration_stage.dart';
 import 'package:nardeboun/models/content/chapter.dart';
@@ -19,7 +17,6 @@ import 'package:nardeboun/services/image_cache/smart_image_cache_service.dart';
 import '../services/preload/preload_service.dart';
 import '../exceptions/error_handler.dart';
 import '../widgets/common/empty_state_widget.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../utils/logger.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -31,11 +28,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<Subject> _subjects = const [];
-  List<AppBanner> _banners = const [];
-  late final PageController _bannerController;
-  // حذف fallback شبکه؛ فقط از Hive استفاده می‌شود
-  int _bannerIndex = 0;
-  Timer? _bannerTimer;
 
   // کش برای چک کردن حد مجاز تغییر پایه
   bool? _isGradeChangeAllowed;
@@ -44,14 +36,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // مدیریت async operations برای جلوگیری از تداخل navigation
   bool _isProcessingGradeChange = false;
   bool _isLoadingSubjects = false;
-  bool _isLoadingBanners = false;
 
   // تاخیر برای نمایش ویجیت خالی محتوا
   bool _showEmptyState = false;
   Timer? _emptyStateTimer;
 
   bool _isAnyAsyncOperationRunning() {
-    return _isProcessingGradeChange || _isLoadingSubjects || _isLoadingBanners;
+    return _isProcessingGradeChange || _isLoadingSubjects;
   }
 
   Future<bool> _checkGradeChangeLimit() async {
@@ -99,11 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _checkAuthAndRedirect();
-    _bannerController = PageController(viewportFraction: 0.92);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSubjects();
-      _loadBanners();
-      _startBannerTimer();
       _startPreloading();
     });
   }
@@ -116,36 +104,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final appState = context.read<AppStateManager>();
 
-    Logger.debug('🔍 [HOME] Checking auth and registration stage...');
+    Logger.debug('🔍 [HOME] Checking auth...');
     Logger.debug('🔍 [HOME] isUserAuthenticated: ${appState.isUserAuthenticated}');
 
-    // اگه authenticated نیست، به onboarding بفرست
     if (!appState.isUserAuthenticated) {
-      Logger.debug('🔍 [HOME] User not authenticated -> redirecting to /onboarding');
-      Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil('/onboarding', (_) => false);
+      Logger.debug('🔍 [HOME] User not authenticated -> redirecting to /auth');
+      Navigator.of(context).pushNamedAndRemoveUntil('/auth', (_) => false);
       return;
     }
 
-    final stage = appState.currentRegistrationStage;
-    Logger.debug('🔍 [HOME] Registration stage: ${stage.value}');
-
-    // اگه registration complete نشده، به صفحه مناسب بفرست
-    if (stage != RegistrationStage.completed) {
-      final route = appState.appropriateRoute;
-      Logger.debug('🔍 [HOME] Registration incomplete -> redirecting to $route');
-      Navigator.of(context).pushNamedAndRemoveUntil(route, (_) => false);
-      return;
-    }
-
-    Logger.debug('🔍 [HOME] Auth OK, registration completed -> staying in Home');
+    Logger.debug('🔍 [HOME] Auth OK -> staying in Home');
   }
 
-  // Manual banner slider - no auto-sliding
-  void _startBannerTimer() {
-    // Timer removed - banners are now manual
-  }
 
   /// شروع Preloading برای بهبود سرعت navigation
   void _startPreloading() {
@@ -170,9 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _bannerTimer?.cancel();
     _emptyStateTimer?.cancel();
-    _bannerController.dispose();
     super.dispose();
   }
 
@@ -300,54 +268,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${String.fromCharCodes(itr)}…';
   }
 
-  Future<void> _loadBanners() async {
-    // اگر قبلاً لود شده، دوباره لود نکن
-    if (_banners.isNotEmpty) {
-      Logger.info('🚀 [HOME] Banners already loaded, skipping...');
-      return;
-    }
-
-    _isLoadingBanners = true;
-
-    try {
-      final appState = context.read<AppStateManager>();
-      final profile = appState.authService.currentProfile;
-
-      if (profile?.grade != null) {
-        final int gradeId = profile!.grade!;
-        final int? trackId = _mapFieldOfStudyToTrackId(profile.fieldOfStudy);
-
-        Logger.info(
-          '🎯 [HOME] Loading banners for grade: $gradeId, track: $trackId',
-        );
-
-        // از CachedContentService بخوان (که از Mini-Request Hive می‌خواند)
-        final banners = await CachedContentService.getActiveBannersForGrade(
-          gradeId: gradeId,
-          trackId: trackId,
-        );
-
-        // فیلتر کردن banner های معتبر
-        final validBanners = banners.where((banner) {
-          return banner.imageUrl.isNotEmpty &&
-              banner.imageUrl.contains('jarkzyebfgpxywlxizeo.supabase.co');
-        }).toList();
-
-        if (mounted) {
-          setState(() {
-            _banners = validBanners;
-          });
-          Logger.info(
-            '🚀 [HOME] Banners loaded from Hive (${validBanners.length} valid)',
-          );
-        }
-      }
-    } catch (e) {
-      Logger.error('Error loading banners', e);
-    } finally {
-      _isLoadingBanners = false;
-    }
-  }
 
   void _updateUserGrade(String selectedGrade) async {
     // اول چک کن آیا مجاز هست یا نه
@@ -417,10 +337,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // پاک کردن تمام cache های مربوط به پایه قبلی
       AppCacheManager.clearCache(null);
 
-      // پاک کردن subjects و banners برای force reload
+      // پاک کردن subjects برای force reload
       setState(() {
         _subjects = [];
-        _banners = [];
       });
 
       // 🚀 فراخوانی Mini-Request با force=true برای پایه جدید
@@ -449,9 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // بارگذاری مجدد محتوا
       await _loadSubjects();
-      if (!mounted) return;
-
-      await _loadBanners();
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -630,284 +546,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _handleBannerTap(AppBanner banner) async {
-    Logger.info(
-      '🎯 [BANNER-TAP] Banner clicked: id=${banner.id}, type=${banner.bannerType}',
-    );
-
-    // جلوگیری از تداخل عملیات
-    if (_isAnyAsyncOperationRunning()) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'لطفاً صبر کنید تا عملیات قبلی تمام شود.',
-            textAlign: TextAlign.right,
-            textDirection: TextDirection.rtl,
-            style: const TextStyle(
-              fontFamily: 'IRANSansXFaNum',
-              color: Colors.white,
-            ),
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // بررسی نوع بنر
-    if (banner.bannerType == 'external') {
-      Logger.info(
-        '🌐 [BANNER-TAP] External banner, opening URL: ${banner.externalUrl}',
-      );
-      await _handleExternalBannerTap(banner);
-      return;
-    }
-
-    // بنر نوع internal - منطق فعلی
-    if (banner.videoId == null) {
-      Logger.info('⚠️ [BANNER-TAP] Internal banner without videoId');
-      return;
-    }
-
-    Logger.info(
-      '🎬 [BANNER-TAP] Internal banner, navigating to video: ${banner.videoId}',
-    );
-
-    Map<String, dynamic>? videoData; // برای fallback
-    String? embedHtmlOrUrl; // برای fallback
-    NavigatorState? navigator; // ذخیره Navigator برای ARM64 compatibility
-
-    try {
-      if (!mounted) return;
-      setState(() => _isLoadingBanners = true);
-
-      // ذخیره Navigator و AppStateManager قبل از async operations (برای ARM64)
-      if (!mounted) return;
-      navigator = Navigator.of(context);
-      final appState = context.read<AppStateManager>();
-      final profile = appState.authService.currentProfile;
-      
-      if (profile == null || !mounted) {
-        throw Exception('پروفایل کاربر موجود نیست');
-      }
-      
-      final int gradeId = profile.grade ?? 7; // پیش‌فرض هفتم
-      final int? trackId = null; // فعلاً رشته نداریم
-
-      // 1) واکشی اطلاعات ویدیو → lesson_id
-      videoData = await CachedContentService.getVideoById(banner.videoId!);
-      if (videoData == null || !mounted) {
-        throw Exception('اطلاعات ویدیو یافت نشد');
-      }
-      embedHtmlOrUrl =
-          (videoData['embed_html'] as String?) ??
-          (videoData['video_url'] as String?);
-
-      // نوع‌سازی امن برای ARM64 (ممکن است num برگرداند)
-      final dynamic lessonIdRaw = videoData['lesson_id'];
-      final int? lessonId = lessonIdRaw is int 
-          ? lessonIdRaw 
-          : (lessonIdRaw is num ? lessonIdRaw.toInt() : null);
-      
-      if (lessonId == null || !mounted) {
-        throw Exception('شناسه درس برای این ویدیو موجود نیست');
-      }
-
-      // 2) واکشی درس → chapter_id
-      final supabase = Supabase.instance.client;
-      final lessonRow = await supabase
-          .from('lessons')
-          .select()
-          .eq('id', lessonId)
-          .maybeSingle(); // استفاده از maybeSingle برای ARM64
-    
-      if (lessonRow == null || !mounted) {
-        throw Exception('درس یافت نشد');
-      }
-    
-      // نوع‌سازی امن برای ARM64
-      final dynamic chapterIdRaw = lessonRow['chapter_id'];
-      final int? chapterId = chapterIdRaw is int 
-          ? chapterIdRaw 
-          : (chapterIdRaw is num ? chapterIdRaw.toInt() : null);
-    
-      if (chapterId == null || !mounted) {
-        throw Exception('شناسه فصل یافت نشد');
-      }
-
-      // 3) واکشی فصل به‌صورت کامل
-      final chapterRow = await supabase
-          .from('chapters')
-          .select()
-          .eq('id', chapterId)
-          .maybeSingle(); // استفاده از maybeSingle برای ARM64
-    
-      if (chapterRow == null || !mounted) {
-        throw Exception('فصل یافت نشد');
-      }
-    
-      final Chapter chapter = Chapter.fromJson(chapterRow);
-
-      // 4) یافتن Subject مرتبط با subjectOfferId فصل
-      Subject? subject;
-      try {
-        if (!mounted) return;
-        final subjects = await CachedContentService.getSubjectsForUser(
-          gradeId: gradeId,
-          trackId: trackId,
-        );
-        if (!mounted) return;
-        
-        subject = subjects.firstWhere(
-          (s) => s.subjectOfferId == chapter.subjectOfferId,
-          orElse: () => throw Exception('درس مرتبط با این فصل یافت نشد'),
-        );
-      } catch (_) {}
-
-      // 5) اگر از کش پیدا نشد، fallback: از جداول subject_offers و subjects واکشی کن
-      if (subject == null && mounted) {
-        final offerRow = await supabase
-            .from('subject_offers')
-            .select('subject_id')
-            .eq('id', chapter.subjectOfferId)
-            .maybeSingle(); // استفاده از maybeSingle برای ARM64
-        
-        if (offerRow == null || !mounted) {
-          throw Exception('subject_offer یافت نشد');
-        }
-        
-        // نوع‌سازی امن برای ARM64
-        final dynamic subjectIdRaw = offerRow['subject_id'];
-        final int? subjectId = subjectIdRaw is int 
-            ? subjectIdRaw 
-            : (subjectIdRaw is num ? subjectIdRaw.toInt() : null);
-        
-        if (subjectId == null || !mounted) {
-          throw Exception('subject_id نامعتبر است');
-        }
-
-        final subjectRow = await supabase
-            .from('subjects')
-            .select()
-            .eq('id', subjectId)
-            .maybeSingle(); // استفاده از maybeSingle برای ARM64
-        
-        if (subjectRow == null || !mounted) {
-          throw Exception('subject یافت نشد');
-        }
-        
-        subject = Subject.fromJson(
-          subjectRow,
-        ).copyWith(subjectOfferId: chapter.subjectOfferId);
-      }
-
-      if (!mounted) return;
-      // 6) ناوبری به صفحه فصل با Navigator ذخیره شده
-      navigator.pushNamed(
-        '/chapter',
-        arguments: {
-          'chapter': chapter,
-          'subject': subject,
-          'gradeId': gradeId,
-          'trackId': trackId,
-        },
-      );
-    } catch (e, stackTrace) {
-      Logger.error('Error handling banner tap', e, stackTrace);
-      // Fallback: اگر نتوانستیم فصل را پیدا کنیم، مستقیماً ویدیو را پخش کنیم
-      if (!mounted) return;
-      
-      if (embedHtmlOrUrl != null && embedHtmlOrUrl.isNotEmpty) {
-        if (navigator != null) {
-          navigator.pushNamed(
-            '/video-player', 
-            arguments: {'embedHtml': embedHtmlOrUrl}
-          );
-        } else {
-          Navigator.of(context).pushNamed(
-            '/video-player', 
-            arguments: {'embedHtml': embedHtmlOrUrl}
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'خطا در باز کردن صفحه فصل',
-              textAlign: TextAlign.right,
-              textDirection: TextDirection.rtl,
-              style: const TextStyle(
-                fontFamily: 'IRANSansXFaNum',
-                color: Colors.white,
-              ),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingBanners = false);
-    }
-  }
-
-  // متد جدید برای بنرهای external
-  Future<void> _handleExternalBannerTap(AppBanner banner) async {
-    if (banner.externalUrl == null || banner.externalUrl!.isEmpty) {
-      Logger.info('⚠️ [BANNER-TAP] External banner without URL');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'لینک بنر معتبر نیست.',
-            textAlign: TextAlign.right,
-            textDirection: TextDirection.rtl,
-            style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    try {
-      Logger.info('🚀 [BANNER-TAP] Launching URL: ${banner.externalUrl}');
-
-      final Uri url = Uri.parse(banner.externalUrl!);
-      final bool canLaunch = await canLaunchUrl(url);
-
-      if (!canLaunch) {
-        Logger.info('❌ [BANNER-TAP] Cannot launch URL: ${banner.externalUrl}');
-        throw Exception('امکان باز کردن لینک وجود ندارد');
-      }
-
-      final bool launched = await launchUrl(
-        url,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (launched) {
-        Logger.info('✅ [BANNER-TAP] URL launched successfully');
-      } else {
-        Logger.info('❌ [BANNER-TAP] Failed to launch URL');
-        throw Exception('خطا در باز کردن لینک');
-      }
-    } catch (e) {
-      Logger.error('❌ [BANNER-TAP] Error launching external URL', e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'خطا در باز کردن لینک: ${e.toString()}',
-              textAlign: TextAlign.right,
-              textDirection: TextDirection.rtl,
-              style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1069,10 +707,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'نردبون',
-                      style: theme.textTheme.titleLarge?.copyWith(
+                      'نردبون - پنل مدیریت',
+                      style: theme.textTheme.titleMedium?.copyWith(
                         color: Colors.white,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: 'IRANSansXFaNum',
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1184,7 +823,48 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              _buildBannerSlider(context),
+              // کانتینر اضافه کردن ویدیو (به‌جای بنر سابق)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: Container(
+                  width: double.infinity,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.of(context).pushNamed('/video-upload'),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'اضافه کردن ویدیو',
+                            textDirection: TextDirection.rtl,
+                            style: TextStyle(
+                              fontFamily: 'IRANSansXFaNum',
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            Icons.add_circle_outline,
+                            size: 64,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -1198,78 +878,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBannerSlider(BuildContext context) {
-    final theme = Theme.of(context);
-
-    // فیلتر کردن بنرهای معتبر (با URL صحیح)
-    final validBanners = _banners.where((banner) {
-      final isValid =
-          banner.imageUrl.isNotEmpty &&
-          banner.imageUrl.contains('jarkzyebfgpxywlxizeo.supabase.co');
-
-      if (!isValid) {
-        Logger.debug(
-          '🚫 [BANNER] Filtered out invalid banner ${banner.id}: ${banner.imageUrl}',
-        );
-      }
-
-      return isValid;
-    }).toList();
-
-    Logger.info(
-      '🎯 [BANNER] Total banners: ${_banners.length}, Valid: ${validBanners.length}',
-    );
-
-    if (validBanners.isEmpty) {
-      Logger.info('🚫 [BANNER] No valid banners, hiding slider');
-      return const SizedBox.shrink();
-    }
-
-    return SizedBox(
-      height: 200,
-      child: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _bannerController,
-              onPageChanged: (i) => setState(() => _bannerIndex = i),
-              itemCount: validBanners.length,
-              itemBuilder: (context, index) {
-                final banner = validBanners[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: CachedBanner(
-                    banner: banner,
-                    onTap: () => _handleBannerTap(banner),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(validBanners.length, (i) => i).map((i) {
-              final active = i == _bannerIndex;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-                width: active ? 20 : 8,
-                height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: active
-                      ? theme.colorScheme.primary
-                      : Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSubjectsGrid(BuildContext context) {
     // اگر در حال لودینگ است، loading indicator نمایش بده

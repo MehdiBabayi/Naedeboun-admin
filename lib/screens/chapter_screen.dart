@@ -5,8 +5,6 @@ import 'package:nardeboun/models/content/lesson_video.dart';
 import 'package:nardeboun/models/content/subject.dart';
 import 'package:nardeboun/services/content/cached_content_service.dart';
 import '../services/cache/cache_manager.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:flutter/services.dart';
 import '../widgets/common/smooth_scroll_physics.dart';
 import 'pdf_reader_screen_pdfx.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -39,7 +37,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
   List<Lesson>? _lessons; // ← null = هنوز لود نشده
   Map<int, List<LessonVideo>> _videosByLesson = {};
   String _selectedStyle = 'جزوه';
-  WebViewController? _popupWebViewController;
+  // WebView وابستگی‌ها حذف شد؛ نمایش پاپ‌آپ فقط با جزئیات ویدیو انجام می‌شود.
   Map<String, String> _teachersMap = {};
 
   // call _loadTeachersMap from existing initState (append there if present)
@@ -66,592 +64,25 @@ class _ChapterScreenState extends State<ChapterScreen> {
     }
   }
 
-  String _getAparatUrl(String raw) {
-    if (raw.isEmpty) return '';
-    final scriptMatch = RegExp(
-      r'aparat\.com\/embed\/([A-Za-z0-9]+)',
-      caseSensitive: false,
-    ).firstMatch(raw);
-    final vMatch = RegExp(
-      r'aparat\.com\/v\/([A-Za-z0-9]+)',
-      caseSensitive: false,
-    ).firstMatch(raw);
-    final hash = scriptMatch?.group(1) ?? vMatch?.group(1);
-    if (hash == null) return '';
-    return 'https://www.aparat.com/video/video/embed/videohash/$hash/vt/frame?autoplay=1&t=0';
-  }
-
-  String _buildIframeWrapperHtml(String videoUrl) {
-    return '''
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no" />
-    <style>
-      html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }
-      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-    </style>
-  </head>
-  <body>
-    <iframe src="$videoUrl"
-            allowfullscreen
-            webkitallowfullscreen
-            mozallowfullscreen
-            allow="autoplay; fullscreen; picture-in-picture">
-    </iframe>
-  </body>
-</html>
-''';
-  }
-
-  String _buildScriptWrapperHtml(String rawEmbed) {
-    return '''
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no" />
-    <style>
-      html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }
-      .plyr__controls, .controls, .control-bar, [class*="controls"], [class*="control"] { bottom: 0 !important; position: absolute !important; left: 0; right: 0; }
-      .aparat-video-container, .video-container, .player-container, #player, .player { position: absolute !important; inset: 0 !important; }
-      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-      /* آیکون آپارات مخفی نمی‌شود - فقط کلیک‌ها مسدود می‌شوند */
-    </style>
-  </head>
-  <body>
-    $rawEmbed
-    <script>
-      // مسدود کردن کلیک راست
-      document.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        return false;
-      });
-    </script>
-  </body>
-</html>
-''';
-  }
-
-  void _showUnauthorizedMessage() {
-    // نمایش پیام خطا در WebView با تم مرکزی
-    _popupWebViewController?.loadHtmlString('''
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <style>
-      html, body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        width: 100%;
-        box-sizing: border-box;
-        background: #ffffff;
-        font-family: 'IRANSansXFaNum', Arial, sans-serif;
-        direction: rtl;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
-      }
-
-      .error-container {
-        width: 90vw;
-        max-width: 320px;
-        padding: 16px;
-        background: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        text-align: center;
-        color: #1976D2;
-        box-sizing: border-box;
-        overflow-wrap: break-word;
-        word-break: break-word;
-      }
-
-      .error-icon {
-        font-size: 40px;
-        margin-bottom: 12px;
-        color: #D32F2F;
-      }
-
-      .error-title {
-        font-size: 20px;
-        font-weight: bold;
-        color: #D32F2F;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="error-container">
-      <div class="error-icon">⚠️</div>
-      <div class="error-title">خطا در دسترسی</div>
-    </div>
-  </body>
-</html>
-''');
-  }
-
-  void _openVideoPopup(LessonVideo video) async {
-    final raw = video.embedHtml ?? '';
-    final url = _getAparatUrl(raw);
-    _popupWebViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'Fullscreen',
-        onMessageReceived: (JavaScriptMessage msg) async {
-          final value = msg.message;
-          if (value == 'enter') {
-            await SystemChrome.setPreferredOrientations([
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]);
-          } else if (value == 'exit') {
-            await SystemChrome.setPreferredOrientations([
-              DeviceOrientation.portraitUp,
-              DeviceOrientation.portraitDown,
-            ]);
-          }
-        },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (NavigationRequest request) {
-            Logger.debug('🔍 [VIDEO] Navigation request: ${request.url}');
-
-            final url = request.url.toLowerCase();
-
-            // اجازه دسترسی به embed URL های آپارات (با آرگومان‌های متغیر)
-            if (url.contains('aparat.com/embed/') ||
-                url.contains('aparat.com/video/video/embed/videohash/') ||
-                url.startsWith('data:text/html') ||
-                url.startsWith('about:blank') ||
-                url.startsWith('blob:') ||
-                url.startsWith('javascript:') ||
-                url.isEmpty ||
-                (url.contains('aparat.com') && url.contains('embed'))) {
-              Logger.debug('✅ [VIDEO] Allowing embed URL: ${request.url}');
-              return NavigationDecision.navigate;
-            }
-
-            // اجازه منابع ضروری (CDN ها، فونت‌ها، فایل‌های استاتیک)
-            if (url.startsWith('http://') || url.startsWith('https://')) {
-              // اجازه CDN ها و منابع استاتیک آپارات
-              if (url.contains('cdn.aparat.com') ||
-                  url.contains('aparat.com/static/') ||
-                  url.contains('aparat.com/assets/') ||
-                  url.contains('.css') ||
-                  url.contains('.js') ||
-                  url.contains('.woff') ||
-                  url.contains('.woff2') ||
-                  url.contains('.ttf') ||
-                  url.contains('.eot') ||
-                  url.contains('.png') ||
-                  url.contains('.jpg') ||
-                  url.contains('.jpeg') ||
-                  url.contains('.gif') ||
-                  url.contains('.svg') ||
-                  url.contains('.ico') ||
-                  url.contains('fonts.googleapis.com') ||
-                  url.contains('fonts.gstatic.com') ||
-                  url.contains('ajax.googleapis.com')) {
-                Logger.debug('✅ [VIDEO] Allowing resource URL: ${request.url}');
-                return NavigationDecision.navigate;
-              }
-
-              // مسدود کردن همه لینک‌های خارجی (تبلیغات، سایت‌های دیگر)
-              if (!url.contains('aparat.com')) {
-                Logger.debug(
-                  '❌ [VIDEO] Blocking external link (ad): ${request.url}',
-                );
-                _showUnauthorizedMessage();
-                return NavigationDecision.prevent;
-              }
-
-              // مسدود کردن URL های خارجی آپارات (صفحه اصلی سایت، نه embed)
-              if (url.contains('aparat.com') &&
-                  !url.contains('embed') &&
-                  !url.contains('videohash')) {
-                Logger.debug(
-                  '❌ [VIDEO] Blocking external aparat: ${request.url}',
-                );
-                _showUnauthorizedMessage();
-                return NavigationDecision.prevent;
-              }
-            }
-
-            // برای سایر URL ها هم اجازه نمی‌دهیم (ایمن‌تر است)
-            Logger.debug('❌ [VIDEO] Blocking unknown URL: ${request.url}');
-            _showUnauthorizedMessage();
-            return NavigationDecision.prevent;
-          },
-          onPageFinished: (url) async {
-            // Inject listeners for fullscreen changes and try to unmute the video if accessible
-            await _popupWebViewController?.runJavaScript('''
-              (function(){
-                function notifyFS(){
-                  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-                  if (isFs) { Fullscreen.postMessage('enter'); } else { Fullscreen.postMessage('exit'); }
-                }
-                document.addEventListener('fullscreenchange', notifyFS);
-                document.addEventListener('webkitfullscreenchange', notifyFS);
-                // Try unmute if the video is in same document (script embed case)
-                setTimeout(function(){
-                  var v = document.querySelector('video');
-                  if (v) { try { v.muted = false; v.volume = 1.0; } catch(e){} }
-                }, 200);
-                
-                // مسدود کردن کلیک‌ها روی لینک‌های تبلیغاتی (اطلاعات بیشتر)
-                function blockAdLinks(e) {
-                  var target = e.target;
-                  // پیدا کردن لینک نزدیک‌ترین والد
-                  while (target && target !== document) {
-                    if (target.tagName === 'A' || target.tagName === 'BUTTON') {
-                      var href = target.href || target.getAttribute('href') || target.getAttribute('onclick');
-                      if (href && !href.includes('aparat.com') && !href.includes('embed')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        // ارسال پیام به Flutter برای نمایش خطا
-                        if (window.Flutter) {
-                          window.Flutter.postMessage(JSON.stringify({type: 'blocked_ad_link', url: href}));
-                        }
-                        return false;
-                      }
-                    }
-                    target = target.parentElement;
-                  }
-                }
-                // اضافه کردن listener برای کلیک‌ها (capture phase برای catch کردن همه)
-                document.addEventListener('click', blockAdLinks, true);
-                // مسدود کردن کلیک راست هم (قبلاً بود)
-                document.addEventListener('contextmenu', function(e) {
-                  e.preventDefault();
-                  return false;
-                });
-              })();
-            ''');
-          },
-        ),
-      );
-
-    if (raw.contains('<script') &&
-        raw.toLowerCase().contains('aparat.com/embed')) {
-      _popupWebViewController!.loadHtmlString(_buildScriptWrapperHtml(raw));
-    } else if (url.isNotEmpty) {
-      _popupWebViewController!.loadHtmlString(_buildIframeWrapperHtml(url));
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 24,
+  // کمک‌متد برای نمایش کلید/مقدار
+  Widget _kv(String key, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(key, textAlign: TextAlign.right, textDirection: TextDirection.rtl, style: const TextStyle(fontFamily: 'IRANSansXFaNum', fontWeight: FontWeight.w600)),
           ),
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(ctx).size.height * 0.9,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              color: Colors.black,
-                              child: _popupWebViewController != null
-                                  ? WebViewWidget(
-                                      controller: _popupWebViewController!,
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            left: 8,
-                            child: Material(
-                              color: Colors.black54,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap: () => Navigator.of(ctx).pop(),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(8.0),
-                                  child: Icon(Icons.close, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // دکمه های PDF بر اساس وجود URL
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Directionality(
-                      textDirection: TextDirection.rtl,
-                      child: Column(
-                        children: [
-                          if (video.notePdfUrl != null &&
-                              video.notePdfUrl!.isNotEmpty)
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: const Color(0xFF3629B7),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      final file = await PdfService.instance
-                                          .downloadAndCache(video.notePdfUrl!);
-                                      if (!ctx.mounted) return;
-                                      Navigator.of(ctx).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              PdfReaderScreenPdfx(file: file),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.picture_as_pdf),
-                                    label: const Text(
-                                      'خواندن جزوه',
-                                      style: TextStyle(
-                                        fontFamily: 'IRANSansXFaNum',
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: const Color(0xFF3629B7),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      try {
-                                        await PdfService.instance
-                                            .downloadToDownloads(
-                                              video.notePdfUrl!,
-                                            );
-                                        if (ctx.mounted) {
-                                          ScaffoldMessenger.of(
-                                            ctx,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              backgroundColor: Colors.green,
-                                              content: Text(
-                                                'در حال دانلود...',
-                                                textAlign: TextAlign.right,
-                                                textDirection:
-                                                    TextDirection.rtl,
-                                                style: TextStyle(
-                                                  fontFamily: 'IRANSansXFaNum',
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (ctx.mounted) {
-                                          ScaffoldMessenger.of(
-                                            ctx,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'خطا در دانلود جزوه: $e',
-                                                textAlign: TextAlign.right,
-                                                textDirection:
-                                                    TextDirection.rtl,
-                                                style: TextStyle(
-                                                  fontFamily: 'IRANSansXFaNum',
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    icon: const Icon(Icons.download),
-                                    label: const Text(
-                                      'دانلود جزوه',
-                                      style: TextStyle(
-                                        fontFamily: 'IRANSansXFaNum',
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          if (video.exercisePdfUrl != null &&
-                              video.exercisePdfUrl!.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: const Color(0xFF3629B7),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      final file = await PdfService.instance
-                                          .downloadAndCache(
-                                            video.exercisePdfUrl!,
-                                          );
-                                      if (!ctx.mounted) return;
-                                      Navigator.of(ctx).push(
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              PdfReaderScreenPdfx(file: file),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.picture_as_pdf),
-                                    label: const Text(
-                                      'خواندن نمونه سوال',
-                                      style: TextStyle(
-                                        fontFamily: 'IRANSansXFaNum',
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: const Color(0xFF3629B7),
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
-                                    ),
-                                    onPressed: () async {
-                                      try {
-                                        await PdfService.instance
-                                            .downloadToDownloads(
-                                              video.exercisePdfUrl!,
-                                            );
-                                        if (ctx.mounted) {
-                                          ScaffoldMessenger.of(
-                                            ctx,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              backgroundColor: Colors.green,
-                                              content: Text(
-                                                'در حال دانلود...',
-                                                textAlign: TextAlign.right,
-                                                textDirection:
-                                                    TextDirection.rtl,
-                                                style: TextStyle(
-                                                  fontFamily: 'IRANSansXFaNum',
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (ctx.mounted) {
-                                          ScaffoldMessenger.of(
-                                            ctx,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                'خطا در دانلود نمونه سوال: $e',
-                                                textAlign: TextAlign.right,
-                                                textDirection:
-                                                    TextDirection.rtl,
-                                                style: TextStyle(
-                                                  fontFamily: 'IRANSansXFaNum',
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    icon: const Icon(Icons.download),
-                                    label: const Text(
-                                      'دانلود نمونه سوال',
-                                      style: TextStyle(
-                                        fontFamily: 'IRANSansXFaNum',
-                                        fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 7,
+            child: Text(value, textAlign: TextAlign.right, textDirection: TextDirection.rtl, style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
           ),
-        );
-      },
-    ).then((_) async {
-      // Ensure portrait restored when dialog closes
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
-    });
+        ],
+      ),
+    );
   }
 
   @override
@@ -1297,7 +728,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: const Icon(
-                  Icons.play_arrow,
+                  Icons.edit_rounded,
                   color: Colors.white,
                   size: 24,
                 ),
@@ -1436,5 +867,91 @@ class _ChapterScreenState extends State<ChapterScreen> {
       default:
         return 'جزوه';
     }
+  }
+
+  /// نمایش پاپ‌آپ جزئیات ویدیو (بدون WebView)
+  void _openVideoPopup(LessonVideo video) {
+    // پیدا کردن درس مربوطه
+    final lesson = _lessons?.firstWhere(
+      (l) => l.id == video.lessonId,
+      orElse: () => Lesson(
+        id: video.lessonId,
+        chapterId: 0,
+        lessonOrder: 0,
+        title: 'عنوان درس',
+        active: true,
+      ),
+    );
+
+    // نام استاد
+    final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text(
+            'جزئیات ویدیو',
+            style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _kv('شناسه ویدیو', video.id.toString()),
+                  _kv('درس', lesson?.title ?? '-'),
+                  _kv('استاد', teacherName),
+                  _kv('نوع محتوا', _getStyleName(video.style)),
+                  _kv('وضعیت محتوا', video.contentStatus),
+                  _kv('لینک آپارات', video.aparatUrl.isNotEmpty ? video.aparatUrl : '-'),
+                  _kv('مدت زمان', _formatDuration(video.durationSec)),
+                  _kv('تگ‌ها', video.tags.isNotEmpty ? video.tags.join(', ') : '-'),
+                  if (video.notePdfUrl != null && video.notePdfUrl!.isNotEmpty)
+                    _kv('لینک PDF جزوه', video.notePdfUrl!),
+                  if (video.exercisePdfUrl != null && video.exercisePdfUrl!.isNotEmpty)
+                    _kv('لینک PDF نمونه سوال', video.exercisePdfUrl!),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            // دکمه ویرایش (سبز)
+            ElevatedButton(
+              onPressed: () {
+                // TODO: افزودن منطق ویرایش در آینده
+                Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'ویرایش',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+            ),
+            // دکمه حذف (قرمز)
+            ElevatedButton(
+              onPressed: () {
+                // TODO: افزودن منطق حذف در آینده
+                Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'حذف',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

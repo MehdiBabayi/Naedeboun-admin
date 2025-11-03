@@ -139,13 +139,9 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
       if (!mounted) return;
       _timer?.cancel();
 
-      // بعد از تأیید OTP، کاربر را به صفحه مناسب هدایت می‌کنیم
-      final appState = context.read<AppStateManager>();
-      final appropriateRoute = appState.appropriateRoute;
-      Logger.info(
-        "🔍 [DEBUG] Navigating to appropriate route: $appropriateRoute",
-      );
-      Navigator.of(context).pushReplacementNamed(appropriateRoute);
+      // پس از ورود موفق (و چک ادمین در سرویس)، مستقیماً به /home می‌رویم
+      Logger.info("🔍 [DEBUG] Navigating to /home after successful admin login");
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
     } on AuthServiceException catch (e) {
       final currentRoute = ModalRoute.of(context)?.settings.name;
       if (currentRoute == '/verify-otp' && mounted) {

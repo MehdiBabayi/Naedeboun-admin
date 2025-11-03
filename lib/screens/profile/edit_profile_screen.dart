@@ -291,7 +291,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 Navigator.of(
                   context,
                   rootNavigator: true,
-                ).pushNamedAndRemoveUntil('/onboarding', (route) => false);
+                ).pushNamedAndRemoveUntil('/auth', (route) => false);
               }
             }
           },

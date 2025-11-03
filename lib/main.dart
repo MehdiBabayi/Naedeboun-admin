@@ -6,10 +6,6 @@ import 'const/api_keys.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile/edit_profile_screen.dart';
-import 'screens/onboarding/onboarding_screen.dart';
-import 'screens/onboarding/onboarding_step1_screen.dart';
-import 'screens/onboarding/onboarding_step2_screen.dart';
-import 'screens/onboarding/onboarding_success_screen.dart';
 import 'screens/subject_screen.dart';
 import 'screens/chapter_screen.dart';
 import 'screens/auth/verify_otp_screen.dart';
@@ -35,6 +31,7 @@ import 'services/mini_request/mini_request_logger.dart';
 import 'services/image_cache/smart_image_cache_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'utils/logger.dart';
+import 'screens/video_upload/video_upload_screen.dart';
 
 /// تنظیم orientation بر اساس کانفیگ
 Future<void> _setOrientationFromConfig() async {
@@ -207,18 +204,12 @@ class MyApp extends StatelessWidget {
                 ),
               );
             },
-            '/onboarding/step1': (context) =>
-                const SimpleNetworkWrapper(child: OnboardingStep1Screen()),
-            '/onboarding/step2': (context) =>
-                const SimpleNetworkWrapper(child: OnboardingStep2Screen()),
-            '/onboarding/success': (context) =>
-                const SimpleNetworkWrapper(child: OnboardingSuccessScreen()),
-            '/onboarding': (context) =>
-                const SimpleNetworkWrapper(child: OnboardingScreen()),
             '/provincial-sample': (context) =>
                 const SimpleNetworkWrapper(child: ProvincialSampleScreen()),
             '/step-by-step': (context) =>
                 const SimpleNetworkWrapper(child: StepByStepScreen()),
+            '/video-upload': (context) =>
+                const SimpleNetworkWrapper(child: VideoUploadScreen()),
             '/subject': (context) {
               final args =
                   ModalRoute.of(context)?.settings.arguments
@@ -376,28 +367,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     String route;
 
-    // اگر initialRouteForDev ست است، آن را احترام بگذار (بدون نیاز به devMode)
     if (initialRouteForDev.isNotEmpty) {
-      // مسیرهایی که بدون لاگین هم مجازند
+      // مسیرهای عمومی مجاز بدون لاگین
       const publicRoutes = <String>{
-        '/onboarding',
-        '/onboarding/step1',
-        '/onboarding/step2',
-        '/onboarding/success',
         '/auth',
       };
-
       final isPublic = publicRoutes.contains(initialRouteForDev);
       if (isPublic) {
         route = initialRouteForDev;
       } else {
-        // برای مسیرهای غیرعمومی، اگر لاگین نیست → /onboarding، در غیر این صورت همان مسیر
-        route = appState.authService.currentProfile == null
-            ? '/onboarding'
-            : initialRouteForDev;
+        route = appState.isUserAuthenticated ? initialRouteForDev : '/auth';
       }
     } else {
-      route = appState.appropriateRoute;
+      route = appState.appropriateRoute; // فقط /auth یا /home
     }
 
     if (mounted) {

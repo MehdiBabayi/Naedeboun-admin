@@ -92,35 +92,19 @@ class AppStateManager extends ChangeNotifier {
     }
   }
 
-  /// مسیر مناسب برای کاربر بر اساس وضعیت ثبت‌نام
+  /// مسیر مناسب برای کاربر بر اساس وضعیت احراز هویت (بدون onboarding)
   String get appropriateRoute {
     try {
-      Logger.debug('🔍 [ROUTE] Determining appropriate route...');
-      Logger.debug('🔍 [ROUTE] isUserAuthenticated: $isUserAuthenticated');
-
+      Logger.debug('🔍 [ROUTE] Determining simple route...');
       if (!isUserAuthenticated) {
-        Logger.debug('🔍 [ROUTE] User not authenticated -> /onboarding');
-        return '/onboarding';
+        Logger.debug('🔍 [ROUTE] Not authenticated -> /auth');
+        return '/auth';
       }
-
-      Logger.debug(
-        '🔍 [ROUTE] currentRegistrationStage: ${currentRegistrationStage.value}',
-      );
-
-      switch (currentRegistrationStage) {
-        case RegistrationStage.step1:
-          Logger.debug('🔍 [ROUTE] Stage is step1 -> /onboarding/step1');
-          return '/onboarding/step1';
-        case RegistrationStage.step2:
-          Logger.debug('🔍 [ROUTE] Stage is step2 -> /onboarding/step2');
-          return '/onboarding/step2';
-        case RegistrationStage.completed:
-          Logger.debug('🔍 [ROUTE] Stage is completed -> /home');
-          return '/home';
-      }
+      Logger.debug('🔍 [ROUTE] Authenticated -> /home');
+      return '/home';
     } catch (e) {
       Logger.error('❌ AppStateManager: Error in appropriateRoute', e);
-      return '/onboarding'; // در صورت خطا به صفحه معرفی می‌رویم
+      return '/auth';
     }
   }
 

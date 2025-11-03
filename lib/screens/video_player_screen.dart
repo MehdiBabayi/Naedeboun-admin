@@ -296,7 +296,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           // دکمه برگشت شناور در گوشه بالا (چپ)
           SafeArea(
             child: Align(
-              alignment: Alignment.topLeft,
+              alignment: Alignment.topRight,
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: ClipRRect(

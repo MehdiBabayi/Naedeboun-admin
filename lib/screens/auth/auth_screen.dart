@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../exceptions/auth_exceptions.dart';
 import '../../exceptions/error_handler.dart';
 import '../../providers/core/app_state_manager.dart';
-import '../onboarding/onboarding_screen.dart';
+// import '../onboarding/onboarding_screen.dart';
 import '../../widgets/auth/phone_keypad.dart';
 import '../../widgets/network/network_wrapper.dart';
 
@@ -87,17 +87,7 @@ class _AuthScreenState extends State<AuthScreen> {
         centerTitle: true,
         backgroundColor: theme.colorScheme.surface,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
-          onPressed: () {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) =>
-                    const SimpleNetworkWrapper(child: OnboardingScreen()),
-              ),
-            );
-          },
-        ),
+        automaticallyImplyLeading: false,
       ),
       body: Column(
         children: [
