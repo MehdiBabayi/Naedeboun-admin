@@ -38,11 +38,13 @@ serve(async (req) => {
   try {
     const input: ContentInput = await req.json();
     
-    // ✅ اصلاح شد: aparat_url رو از شرط الزامی حذف کردیم
+    // ✅ Validation: بررسی فیلدهای الزامی (با chapter_order و lesson_order)
     if (!input.branch || !input.grade || !input.subject || !input.subject_slug || 
-        !input.chapter_title || !input.lesson_title || !input.teacher_name) {
+        !input.chapter_title || input.chapter_order == null || input.chapter_order < 1 ||
+        !input.lesson_title || input.lesson_order == null || input.lesson_order < 1 ||
+        !input.teacher_name) {
       return new Response(
-        JSON.stringify({ error: "فیلدهای الزامی: branch, grade, subject, subject_slug, chapter_title, lesson_title, teacher_name" }),
+        JSON.stringify({ error: "فیلدهای الزامی: branch, grade, subject, subject_slug, chapter_title, chapter_order (>= 1), lesson_title, lesson_order (>= 1), teacher_name" }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -210,31 +212,7 @@ serve(async (req) => {
       throw new Error(`خطا در یافتن فصل: ${chapterError.message}`);
     }
 
-    // 7. Find or create lesson
-    let { data: lesson, error: lessonError } = await supabase
-      .from('lessons')
-      .select('id')
-      .eq('chapter_id', chapter.id)
-      .eq('lesson_order', input.lesson_order)
-      .single();
-
-    if (lessonError && lessonError.code === 'PGRST116') {
-      const { data: newLesson, error: createLessonError } = await supabase
-        .from('lessons')
-        .insert({ 
-          chapter_id: chapter.id,
-          lesson_order: input.lesson_order,
-          title: input.lesson_title
-        })
-        .select('id')
-        .single();
-      if (createLessonError) throw new Error(`خطا در ایجاد درس: ${createLessonError.message}`);
-      lesson = newLesson;
-    } else if (lessonError) {
-      throw new Error(`خطا در یافتن درس: ${lessonError.message}`);
-    }
-
-    // 8. Find or create teacher
+    // 7. Find or create teacher (مرحله 8 در کد قدیم)
     let { data: teacher, error: teacherError } = await supabase
       .from('teachers')
       .select('id')
@@ -253,7 +231,7 @@ serve(async (req) => {
       throw new Error(`خطا در یافتن استاد: ${teacherError.message}`);
     }
 
-    // 9. Create lesson_video
+    // 8. Create/Update lesson_video (بدون نیاز به lesson)
     const styleMap: Record<string, 'note' | 'book' | 'sample'> = {
       'note': 'note',
       'book': 'book',
@@ -266,11 +244,15 @@ serve(async (req) => {
 
     const { data: lessonVideo, error: lessonVideoError } = await supabase
       .from('lesson_videos')
-      .insert({
-        lesson_id: lesson.id,
+      .upsert({
+        chapter_id: chapter.id,
+        chapter_order: input.chapter_order,
+        chapter_title: input.chapter_title,
+        lesson_order: input.lesson_order,
+        lesson_title: input.lesson_title,
         teacher_id: teacher.id,
         style: normalizedStyle,
-        aparat_url: input.aparat_url || '',  // ✅ حالا می‌تونه خالی باشه
+        aparat_url: input.aparat_url || '',
         duration_sec: input.duration_sec,
         tags: input.tags || [],
         prereq_lesson_id: input.prereq_lesson_id || null,
@@ -280,6 +262,9 @@ serve(async (req) => {
         allow_landscape: input.allow_landscape !== false,
         note_pdf_url: input.note_pdf_url ?? null,
         exercise_pdf_url: input.exercise_pdf_url ?? null
+      }, {
+        onConflict: 'chapter_id,lesson_order,lesson_title,teacher_id,style',
+        ignoreDuplicates: false
       })
       .select('id')
       .single();
@@ -299,7 +284,6 @@ serve(async (req) => {
           subject_id: subject.id,
           subject_offer_id: subjectOffer.id,
           chapter_id: chapter.id,
-          lesson_id: lesson.id,
           teacher_id: teacher.id,
           lesson_video_id: lessonVideo.id
         }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:nardeboun/models/content/subject.dart';
-import 'package:nardeboun/services/content/cached_content_service.dart';
-import 'package:nardeboun/services/content/book_cover_service.dart';
+import 'package:nardeboun/services/content/content_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:nardeboun/services/content/book_cover_service.dart';
 import 'package:nardeboun/models/content/chapter.dart';
 import '../widgets/bubble_nav_bar.dart';
 import '../../utils/grade_utils.dart';
@@ -124,49 +124,23 @@ class _SubjectScreenState extends State<SubjectScreen> {
     // 🚀 استفاده از subjectOfferId ذخیره شده (بدون request!)
     int? offerId = widget.subject!.subjectOfferId;
 
-    // اگر null بود (کد قدیمی)، از سرور بگیر
+    // اگر null بود، از سرور بگیر
     if (offerId == null) {
       Logger.info('⚠️ subjectOfferId is null, fetching from server...');
-      offerId = await CachedContentService.getSubjectOfferId(
+      final contentService = ContentService(Supabase.instance.client);
+      offerId = await contentService.getSubjectOfferId(
         subjectId: widget.subject!.id,
         gradeId: widget.gradeId,
         trackId: widget.trackId,
       );
     } else {
-      Logger.info('✅ Using cached subjectOfferId: $offerId');
+      Logger.info('✅ Using subjectOfferId: $offerId');
     }
 
     if (offerId != null) {
-      // ابتدا از کش بخوان
-      try {
-        final cachedChapters = await CachedContentService.getChapters(
-          offerId,
-          gradeId: widget.gradeId,
-          trackId: widget.trackId,
-        );
-
-        if (cachedChapters.isNotEmpty) {
-          // لود کردن ویدیوهای هر فصل برای گرفتن نام واقعی اساتید
-          await _loadChapterTeachers(cachedChapters);
-
-          if (!mounted) return;
-          setState(() {
-            _chapters = cachedChapters;
-            _loading = false;
-          });
-          Logger.info('🚀 [SUBJECT] Chapters loaded from cache');
-          return;
-        }
-      } catch (e) {
-        Logger.info('⚠️ [SUBJECT] Chapter cache miss, falling back to server: $e');
-      }
-
-      // اگر کش خالی بود، از سرور بگیر
-      final chapters = await CachedContentService.getChapters(
-        offerId,
-        gradeId: widget.gradeId,
-        trackId: widget.trackId,
-      );
+      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
+      final contentService = ContentService(Supabase.instance.client);
+      final chapters = await contentService.getChapters(offerId);
 
       // لود کردن ویدیوهای هر فصل برای گرفتن نام واقعی اساتید
       await _loadChapterTeachers(chapters);
@@ -191,30 +165,19 @@ class _SubjectScreenState extends State<SubjectScreen> {
 
     for (final chapter in chapters) {
       try {
-        // لود کردن درس‌های این فصل
-        final lessons = await CachedContentService.getLessons(
-          chapter.id,
-          gradeId: widget.gradeId,
-          trackId: widget.trackId,
-        );
+        // ✅ تغییر: مستقیماً ویدیوها را از Supabase می‌گیریم
+        final contentService = ContentService(Supabase.instance.client);
+        final videos = await contentService.getLessonVideos(chapter.id);
 
         // استخراج نام‌های منحصر به فرد اساتید
         final Set<String> teacherNames = {};
 
-        for (final lesson in lessons) {
-          // لود کردن ویدیوهای این درس
-          final videos = await CachedContentService.getLessonVideos(
-            lesson.id,
-            gradeId: widget.gradeId,
-            trackId: widget.trackId,
-          );
-
-          for (final video in videos) {
-            // استفاده از teacherId برای گرفتن نام استاد
-            final teacherName = _getTeacherNameById(video.teacherId);
-            if (teacherName.isNotEmpty) {
-              teacherNames.add(teacherName);
-            }
+        // ✅ تغییر: مستقیماً از videos استفاده می‌کنیم (بدون حلقه lessons)
+        for (final video in videos) {
+          // استفاده از teacherId برای گرفتن نام استاد
+          final teacherName = _getTeacherNameById(video.teacherId);
+          if (teacherName.isNotEmpty) {
+            teacherNames.add(teacherName);
           }
         }
 

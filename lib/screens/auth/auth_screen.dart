@@ -5,7 +5,6 @@ import '../../exceptions/error_handler.dart';
 import '../../providers/core/app_state_manager.dart';
 // import '../onboarding/onboarding_screen.dart';
 import '../../widgets/auth/phone_keypad.dart';
-import '../../widgets/network/network_wrapper.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});

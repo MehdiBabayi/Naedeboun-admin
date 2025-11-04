@@ -5,7 +5,6 @@ import '../cache/cache_manager.dart';
 import 'content_service.dart';
 import '../../models/content/subject.dart';
 import '../../models/content/chapter.dart';
-import '../../models/content/lesson.dart';
 import '../../models/content/lesson_video.dart';
 import '../../models/content/step_by_step_pdf.dart';
 import '../../models/content/provincial_sample_pdf.dart';
@@ -103,63 +102,30 @@ class CachedContentService {
     }
   }
 
-  /// دریافت درس‌ها از Mini-Request Hive Box
-  static Future<List<Lesson>> getLessons(
-    int chapterId, {
-    required int gradeId,
-    int? trackId,
-  }) async {
-    final boxName = _getMiniRequestBoxName(gradeId, trackId);
-
-    Logger.info(
-      '🚀 [MINI-REQUEST] Loading lessons from Hive for chapter: $chapterId',
-    );
-
-    try {
-      final box = await Hive.openBox(boxName);
-      final lessonsJson = box.get('lessons');
-
-      if (lessonsJson == null) {
-        Logger.info('⚠️ [MINI-REQUEST] No lessons in Hive');
-        return [];
-      }
-
-      final Map<String, dynamic> allLessons = jsonDecode(lessonsJson);
-      List<dynamic>? lessonsList = allLessons[chapterId.toString()];
-
-      if (lessonsList == null || lessonsList.isEmpty) return [];
-
-      return lessonsList.map((j) => Lesson.fromJson(j)).toList();
-    } catch (e) {
-      Logger.error('❌ [MINI-REQUEST] Error reading lessons from Hive', e);
-      return [];
-    }
-  }
-
   /// دریافت ویدیوهای درس از Mini-Request Hive Box
   static Future<List<LessonVideo>> getLessonVideos(
-    int lessonId, {
+    int chapterId, {  // ← تغییر از lessonId به chapterId
     required int gradeId,
     int? trackId,
   }) async {
     final boxName = _getMiniRequestBoxName(gradeId, trackId);
-
-    Logger.info('🚀 [MINI-REQUEST] Loading videos from Hive for lesson: $lessonId');
-
+    
+    Logger.info('🚀 [MINI-REQUEST] Loading videos from Hive for chapter: $chapterId');
+    
     try {
       final box = await Hive.openBox(boxName);
       final videosJson = box.get('videos');
-
+      
       if (videosJson == null) {
         Logger.info('⚠️ [MINI-REQUEST] No videos in Hive');
         return [];
       }
-
+      
       final Map<String, dynamic> allVideos = jsonDecode(videosJson);
-      List<dynamic>? videosList = allVideos[lessonId.toString()];
-
+      List<dynamic>? videosList = allVideos[chapterId.toString()];  // ← تغییر از lessonId
+      
       if (videosList == null || videosList.isEmpty) return [];
-
+      
       return videosList.map((j) => LessonVideo.fromJson(j)).toList();
     } catch (e) {
       Logger.error('❌ [MINI-REQUEST] Error reading videos from Hive', e);
@@ -386,10 +352,10 @@ class CachedContentService {
     AppCacheManager.clearCache('videos');
   }
 
-  /// پاک کردن Cache ویدیوهای درس خاص
-  static Future<void> refreshVideosForLesson(int lessonId) async {
-    final cacheKey = 'videos_$lessonId';
-    Logger.info('🔄 Refreshing videos cache for Lesson: $lessonId');
+  /// پاک کردن Cache ویدیوهای فصل خاص
+  static Future<void> refreshVideosForChapter(int chapterId) async {
+    final cacheKey = 'videos_chapter_$chapterId';
+    Logger.info('🔄 Refreshing videos cache for Chapter: $chapterId');
     AppCacheManager.clearCache(cacheKey);
   }
 
@@ -425,8 +391,8 @@ class CachedContentService {
     );
   }
 
-  static bool hasVideosCache(int lessonId) {
-    final cacheKey = 'videos_$lessonId';
+  static bool hasVideosCache(int chapterId) {
+    final cacheKey = 'videos_chapter_$chapterId';
     return AppCacheManager.hasValidCache(
       cacheKey,
       AppCacheManager.videosCacheTime,

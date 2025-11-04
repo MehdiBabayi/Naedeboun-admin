@@ -1,867 +1,1289 @@
-# پلن کامل تبدیل اپلیکیشن محصول به اپلیکیشن ادمین
+# کدهای کامل تغییرات - ادغام lessons با lesson_videos
 
-این فایل شامل پلن کامل، بررسی مشکلات، و کدهای نمونه برای اجرای پروژه است.
-
----
-
-## 📋 فهرست مطالب
-
-1. [مرحله 1: تحقیق ساختار دیتابیس و تبدیل کاربر به ادمین](#مرحله-1-تحقیق-ساختار-دیتابیس-و-تبدیل-کاربر-به-ادمین)
-2. [مرحله 2: حذف کامل بخش بنر](#مرحله-2-حذف-کامل-بخش-بنر)
-3. [مرحله 3: جایگزینی بنر با کانتینر آپلود ویدیو](#مرحله-3-جایگزینی-بنر-با-کانتینر-آپلود-ویدیو)
-4. [مرحله 4: حذف onboarding و ثبت‌نام](#مرحله-4-حذف-onboarding-و-ثبتنام)
+این فایل شامل تمام کدهای کامل تغییر یافته است که در پلن استفاده می‌شوند.
 
 ---
 
-## مرحله 1: تحقیق ساختار دیتابیس و تبدیل کاربر به ادمین
+## ⚠️ قوانین اجرای پلن (CRITICAL - حتماً رعایت شود)
 
-### اقدامات:
+### 1. توقف بین مراحل (مهم)
+- **هر مرحله باید از کاربر اجازه بگیرد قبل از رفتن به مرحله بعد**
+- بعد از انجام هر مرحله، توقف کن و منتظر تأیید کاربر بمان
+- هرگز بدون اجازه به مرحله بعد نرو
 
-#### 1.1. تحقیق ساختار جدول profiles
-```powershell
-npx supabase db inspect profiles
+### 2. توضیح در هر مرحله
+- در هر مرحله توضیح بده که چه کاری انجام دادی
+- چه فایل‌هایی تغییر داده‌ای
+- چه تغییراتی اعمال شده
+
+### 3. Deploy کردن Function
+- **اگر function می‌نویسی/تغییر می‌دی → باید deploy کنی**
+- قبل از رفتن به مرحله بعد، function را deploy کن
+- اگر deploy موفق نبود → **متوقف شو و به کاربر اعلام کن**
+
+### 4. Deploy کردن Query/Migration
+- **اگر query/migration می‌نویسی → باید deploy کنی**
+- قبل از رفتن به مرحله بعد، migration را deploy کن
+- اگر deploy موفق نبود → **متوقف شو و به کاربر اعلام کن**
+
+### 5. استفاده از ANPIX قبل از CLIA
+- **همیشه از ANPIX (آنالیز پروژه) قبل از CLIA استفاده کن**
+- ابتدا پروژه را آنالیز کن، سپس تغییرات را اعمال کن
+
+### 6. Flutter Analyze در پایان
+- **بعد از تمام تغییرات Flutter → باید `flutter analyze` بزنی**
+- قبل از اتمام کار، حتماً analyze را اجرا کن
+- اگر خطا داشت → **متوقف شو و به کاربر اعلام کن**
+
+### 7. توقف در صورت خطا
+- **اگر موفق به deploy query یا function نشدی → متوقف شو**
+- **اگر flutter analyze خطا داشت → متوقف شو**
+- در هر دو حالت، به کاربر اعلام کن تا از روش‌های دیگر اقدام کند
+
+### خلاصه قوانین:
+1. ⏸️ توقف بین مراحل + گرفتن اجازه
+2. 📝 توضیح هر مرحله
+3. 🚀 Deploy Function بعد از نوشتن
+4. 🗄️ Deploy Query بعد از نوشتن
+5. 🔍 استفاده از ANPIX قبل از CLIA
+6. ✅ Flutter Analyze در پایان
+7. ⛔ توقف در صورت خطا
+
+---
+
+## 1. Migration SQL (کامل)
+
+فایل: `supabase/migrations/YYYYMMDDHHMMSS_merge_lessons_into_lesson_videos.sql`
+
+```sql
+-- ============================================
+-- ادغام جدول lessons با lesson_videos
+-- ============================================
+
+-- گام 1: اضافه کردن ستون‌های جدید
+ALTER TABLE lesson_videos 
+ADD COLUMN IF NOT EXISTS lesson_title TEXT,
+ADD COLUMN IF NOT EXISTS lesson_order INT,
+ADD COLUMN IF NOT EXISTS chapter_id INT,
+ADD COLUMN IF NOT EXISTS chapter_order INT,
+ADD COLUMN IF NOT EXISTS chapter_title TEXT;
+
+-- گام 2: پر کردن داده‌های موجود
+UPDATE lesson_videos lv
+SET 
+  lesson_title = l.title,
+  lesson_order = l.lesson_order,
+  chapter_id = l.chapter_id,
+  chapter_order = ch.chapter_order,
+  chapter_title = ch.title
+FROM lessons l
+JOIN chapters ch ON ch.id = l.chapter_id
+WHERE lv.lesson_id = l.id;
+
+-- گام 2.5: بررسی و حذف رکوردهای بدون lesson_id (برای اطمینان)
+-- اگر رکوردهایی بدون lesson_id وجود دارند، آن‌ها را حذف می‌کنیم
+DELETE FROM lesson_videos
+WHERE lesson_id IS NULL 
+   OR lesson_id NOT IN (SELECT id FROM lessons);
+
+-- گام 3: تبدیل به NOT NULL
+ALTER TABLE lesson_videos
+ALTER COLUMN lesson_title SET NOT NULL,
+ALTER COLUMN lesson_order SET NOT NULL,
+ALTER COLUMN chapter_id SET NOT NULL,
+ALTER COLUMN chapter_order SET NOT NULL,
+ALTER COLUMN chapter_title SET NOT NULL;
+
+-- گام 4: اضافه کردن Foreign Key
+ALTER TABLE lesson_videos
+ADD CONSTRAINT fk_lesson_videos_chapter 
+FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE CASCADE;
+
+-- گام 4.5: حذف Foreign Key قدیمی prereq_lesson_id (اگر وجود دارد)
+ALTER TABLE lesson_videos
+DROP CONSTRAINT IF EXISTS lesson_videos_prereq_lesson_id_fkey;
+
+-- گام 5: اضافه کردن Unique Constraint (ابتدا constraint قدیمی را حذف می‌کنیم)
+ALTER TABLE lesson_videos
+DROP CONSTRAINT IF EXISTS unique_lesson_video;
+
+ALTER TABLE lesson_videos
+ADD CONSTRAINT unique_lesson_video UNIQUE (
+  chapter_id,
+  lesson_order,
+  lesson_title,
+  teacher_id,
+  style
+);
+
+-- گام 6: اضافه کردن Indexes
+CREATE INDEX IF NOT EXISTS idx_lesson_videos_chapter 
+ON lesson_videos(chapter_id, lesson_order);
+
+CREATE INDEX IF NOT EXISTS idx_lesson_videos_style 
+ON lesson_videos(style) WHERE active = true;
+
+CREATE INDEX IF NOT EXISTS idx_lesson_videos_active 
+ON lesson_videos(active) WHERE active = true;
+
+-- گام 7: حذف Foreign Key قدیمی
+ALTER TABLE lesson_videos
+DROP CONSTRAINT IF EXISTS lesson_videos_lesson_id_fkey;
+
+-- گام 8: حذف ستون lesson_id
+ALTER TABLE lesson_videos
+DROP COLUMN IF EXISTS lesson_id;
+
+-- گام 9: (بعد از تست) حذف جدول lessons
+-- DROP TABLE IF EXISTS lessons CASCADE;
 ```
 
-#### 1.2. تبدیل کاربر +989355053192 به ادمین
-```powershell
-npx supabase db execute "UPDATE profiles SET user_role = 'admin' WHERE phone_number = '+989355053192'"
-```
+---
 
-### مشکلات شناسایی شده:
+## 2. Edge Function: create-content/index.ts (کامل)
 
-#### ⚠️ مشکل 1.1: چک ادمین در `auth_service.dart`
-- **موقعیت**: بعد از خط 522 در `verifyOtp`
-- **مشکل**: چک ادمین وجود ندارد
-- **راه حل**: باید بعد از `_currentProfile = UserProfile.fromJson(profileJson)` چک شود
+### تغییرات اصلی:
+- حذف مرحله 7 (خطوط 213-235)
+- تغییر مرحله 9 به upsert با فیلدهای جدید
 
-**کد اضافه شده در `lib/services/auth/auth_service.dart` بعد از خط 522:**
+```typescript
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-```dart
-_currentUser = UserModel.fromJson(profileJson);
-_currentProfile = UserProfile.fromJson(profileJson);
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
-// چک کردن اینکه کاربر ادمین است یا نه
-Logger.info("🔍 [AUTH] Checking user role: ${_currentProfile?.userRole}");
-if (_currentProfile?.userRole != 'admin') {
-  Logger.error("❌ [AUTH] User is not admin. Role: ${_currentProfile?.userRole}");
-  // پاک کردن session و profile
-  _currentUser = null;
-  _currentProfile = null;
-  await _clearSessionDataOnly();
-  notifyListeners();
-  throw AuthServiceException('شما اجازه دسترسی به پنل ادمین را ندارید. لطفا با شماره تلفن ادمین وارد شوید.');
+interface ContentInput {
+  branch: string;
+  grade: string;
+  track?: string | null;
+  subject: string;
+  subject_slug: string;
+  chapter_order: number;
+  chapter_title: string;
+  lesson_order: number;
+  lesson_title: string;
+  teacher_name: string;
+  style: 'note' | 'book' | 'sample' | 'جزوه' | 'کتاب درسی' | 'نمونه سوال';
+  aparat_url?: string;
+  duration_sec: number;
+  tags?: string[];
+  prereq_lesson_id?: number | null;
+  active?: boolean;
+  content_status?: 'draft' | 'published' | 'archived';
+  embed_html?: string;
+  allow_landscape?: boolean;
+  note_pdf_url?: string | null;
+  exercise_pdf_url?: string | null;
 }
 
-Logger.info("✅ [AUTH] User is admin, access granted");
-// notifyListeners() در خط 524 کد فعلی فراخوانی می‌شود - نیازی به فراخوانی دوباره نیست
-```
-
-#### ⚠️ مشکل 1.2: Navigation در `verify_otp_screen.dart`
-- **موقعیت**: خط 144 - استفاده از `appropriateRoute`
-- **مشکل**: بعد از چک ادمین، باید مستقیما به `/home` برود نه `appropriateRoute`
-- **راه حل**: تغییر navigation به `/home` بعد از موفقیت لاگین
-
-**تغییر در `lib/screens/auth/verify_otp_screen.dart`:**
-
-**نکته مهم**: فقط بخش navigation را تغییر می‌دهیم، بقیه کد بدون تغییر باقی می‌ماند.
-
-```dart
-// در متد _verifyOtp، فقط این بخش را تغییر می‌دهیم (خطوط 138-148):
-
-try {
-  await authService.verifyOtp(widget.phoneNumber, otp, context: context);
-  if (!mounted) return;
-  _timer?.cancel();
-
-  // تغییر: مستقیما به /home می‌رود (بدون استفاده از appropriateRoute)
-  Logger.info("🔍 [OTP] Login successful, navigating to /home");
-  Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
-} on AuthServiceException catch (e) {
-  final currentRoute = ModalRoute.of(context)?.settings.name;
-  if (currentRoute == '/verify-otp' && mounted) {
-    ErrorHandler.show(context, e.message);
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
-} catch (e) {
-  final currentRoute = ModalRoute.of(context)?.settings.name;
-  if (currentRoute == '/verify-otp' && mounted) {
-    ErrorHandler.show(context, 'خطای نامشخصی رخ داد');
-  }
-}
-```
 
-#### ⚠️ مشکل 1.3: `create-content` function
-- **موقعیت**: `supabase/functions/create-content/index.ts` خط 20
-- **مشکل**: style می‌تواند هم فارسی ('جزوه') و هم انگلیسی ('note') باشد
-- **راه حل**: فقط از فارسی استفاده شود (طبق PHP)
-
----
-
-## مرحله 2: حذف کامل بخش بنر
-
-### فایل‌های حذف شونده:
-
-1. ✅ `lib/services/content/banner_service.dart`
-2. ✅ `lib/services/mini_request/mini_request_service.dart`
-3. ✅ `lib/services/mini_request/mini_request_logger.dart`
-4. ⚠️ `lib/services/image_cache/smart_image_cache_service.dart` (بررسی: اگر فقط برای بنر است)
-5. ✅ `lib/models/content/banner.dart`
-6. ✅ `lib/widgets/banner/cached_banner.dart`
-
-### مشکلات شناسایی شده:
-
-#### ⚠️ مشکل 2.1: وابستگی در `cached_content_service.dart`
-- **خط 6**: import `banner_service.dart` - باید حذف شود
-- **خط 11**: import `banner.dart` - باید حذف شود
-- **خط 22**: `static final BannerService _bannerService` - باید حذف شود
-- **خطوط 196-221**: متد `getActiveBannersForGrade` - باید حذف شود
-- **خطوط 439-448**: متدهای `refreshBannersCache` و `refreshBannersForGrade` - باید بررسی و حذف شوند
-- **خطوط 489-494**: متد `hasBannersCache` - باید بررسی و حذف شود
-
-#### ⚠️ مشکل 2.2: تغییرات در `home_screen.dart`
-
-**حذف موارد زیر:**
-- خط 7: import `banner.dart`
-- خط 12: import `cached_banner.dart`
-- خط 34: `List<AppBanner> _banners`
-- خط 35: `PageController _bannerController`
-- خط 37: `int _bannerIndex`
-- خط 38: `Timer? _bannerTimer`
-- خط 47: `bool _isLoadingBanners`
-- خط 54: استفاده از `_isLoadingBanners` در `_isAnyAsyncOperationRunning`
-- خط 102: ایجاد `_bannerController`
-- خط 105: فراخوانی `_loadBanners()`
-- خط 106: فراخوانی `_startBannerTimer()`
-- خط 146-148: متد `_startBannerTimer()`
-- خط 173: `_bannerTimer?.cancel()`
-- خط 175: `_bannerController.dispose()`
-- خط 303-349: متد `_loadBanners()` کامل
-- خط 420: استفاده از `_banners` در force reload
-- خط 633-852: متد `_handleBannerTap()` کامل
-- خط 854-910: متد `_handleExternalBannerTap()` کامل
-
-**نکته مهم**: خط 237 استفاده از `SmartImageCacheService` برای book covers - **این باید نگه داشته شود** (برای book covers است نه بنر)
-
-#### ⚠️ مشکل 2.3: استفاده از `MiniRequestService`
-- **خط 429**: `MiniRequestService.instance.checkForUpdates()` - بررسی: اگر فقط برای بنر است حذف شود
-- **خط 439**: `MiniRequestService.instance.prefetchBookCoversForGrade()` - این برای book covers است، باید نگه داشته شود
-
----
-
-## مرحله 3: جایگزینی بنر با کانتینر آپلود ویدیو
-
-### مشکلات شناسایی شده:
-
-#### ⚠️ مشکل 3.1: Service Role Key
-- **مشکل**: در `api_keys.dart` فیلد `supaBaseServiceRoleKey` وجود ندارد
-- **راه حل**: از `supabase.functions.invoke` با anon key استفاده می‌شود (Supabase function خود از service role استفاده می‌کند)
-
-#### ⚠️ مشکل 3.2: لیست دروس ناقص
-- **مشکل**: لیست دروس در کد نمونه ناقص است (فقط 3 درس)
-- **راه حل**: باید تمام 32 درس از PHP اضافه شود
-
-#### ⚠️ مشکل 3.3: اعتبارسنجی PDF
-- **مشکل**: در `VideoUploadFormData.validate()` PDF برای جزوه و نمونه سوال الزامی است
-- **اما**: در PHP این الزامی نیست (فقط توصیه می‌شود)
-- **راه حل**: اعتبارسنجی PDF را اختیاری می‌کنیم
-
-### فایل جدید: `lib/services/video_upload/video_upload_service.dart`
-
-```dart
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../utils/logger.dart';
-import '../../const/api_keys.dart';
-
-/// سرویس آپلود ویدیو بر اساس منطق PHP
-class VideoUploadService {
-  final SupabaseClient _supabase = Supabase.instance.client;
-  
-  /// ارسال ویدیو به سرور
-  /// تمام اعتبارسنجی‌ها و محدودیت‌ها از PHP گرفته شده
-  Future<Map<String, dynamic>> uploadVideo({
-    required String branch, // ابتدایی، متوسطه اول، متوسطه دوم
-    required String grade, // یکم، دوم، ...، دوازدهم
-    String? track, // ریاضی، تجربی، انسانی یا null
-    required String subject, // نام فارسی درس
-    required String subjectSlug, // اسلاگ درس
-    required String chapterTitle, // عنوان فصل
-    required int chapterOrder, // شماره فصل
-    required String style, // جزوه، نمونه سوال، کتاب درسی
-    required String lessonTitle, // عنوان درس
-    required int lessonOrder, // شماره درس
-    required String teacherName, // نام استاد
-    required int durationSec, // مدت زمان به ثانیه
-    List<String>? tags, // تگ‌ها
-    String? embedHtml, // کد embed آپارات
-    String? notePdfUrl, // لینک PDF جزوه (فقط برای جزوه)
-    String? exercisePdfUrl, // لینک PDF نمونه سوال (فقط برای نمونه سوال)
-  }) async {
-    try {
-      Logger.info("🔍 [VIDEO-UPLOAD] Starting video upload");
-      
-      // اعتبارسنجی مدت زمان
-      if (durationSec <= 0) {
-        throw Exception('مدت زمان باید بیشتر از صفر باشد');
-      }
-      
-      // مدیریت PDF بر اساس نوع محتوا
-      String? finalNotePdfUrl;
-      String? finalExercisePdfUrl;
-      
-      if (style == 'جزوه') {
-        finalNotePdfUrl = notePdfUrl;
-        finalExercisePdfUrl = null;
-      } else if (style == 'نمونه سوال') {
-        finalNotePdfUrl = null;
-        finalExercisePdfUrl = exercisePdfUrl;
-      } else {
-        // کتاب درسی
-        finalNotePdfUrl = null;
-        finalExercisePdfUrl = null;
-      }
-      
-      // تبدیل track به null اگر "بدون رشته" باشد
-      String? finalTrack = (track == 'بدون رشته' || track == null || track.isEmpty) 
-          ? null 
-          : track;
-      
-      // ساخت payload بر اساس PHP
-      final payload = {
-        "branch": branch,
-        "grade": grade,
-        "track": finalTrack,
-        "subject": subject,
-        "subject_slug": subjectSlug,
-        "chapter_title": chapterTitle,
-        "chapter_order": chapterOrder,
-        "lesson_title": lessonTitle,
-        "lesson_order": lessonOrder,
-        "teacher_name": teacherName,
-        "style": style,
-        "duration_sec": durationSec,
-        "tags": tags ?? [],
-        "embed_html": embedHtml,
-        "allow_landscape": true,
-        "note_pdf_url": finalNotePdfUrl,
-        "exercise_pdf_url": finalExercisePdfUrl,
-        "aparat_url": "", // رشته خالی طبق PHP
-      };
-      
-      Logger.info("🔍 [VIDEO-UPLOAD] Payload: $payload");
-      
-      // ارسال به Supabase function با anon key
-      final response = await _supabase.functions.invoke(
-        'create-content',
-        body: payload,
-        headers: {
-          'Authorization': 'Bearer ${APIKeys.supaBaseAnonKey}',
-          'Content-Type': 'application/json',
-        },
+  try {
+    const input: ContentInput = await req.json();
+    
+    if (!input.branch || !input.grade || !input.subject || !input.subject_slug || 
+        !input.chapter_title || !input.lesson_title || !input.teacher_name) {
+      return new Response(
+        JSON.stringify({ error: "فیلدهای الزامی: branch, grade, subject, subject_slug, chapter_title, lesson_title, teacher_name" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-      
-      if (response.status >= 200 && response.status < 300) {
-        final data = response.data as Map<String, dynamic>?;
-        if (data != null && (data['success'] == true || data['success'] == 'true')) {
-          Logger.info("✅ [VIDEO-UPLOAD] Video uploaded successfully");
-          return data;
-        } else {
-          final error = data?['error'] ?? 'خطای ناشناخته';
-          Logger.error("❌ [VIDEO-UPLOAD] Upload failed: $error");
-          throw Exception(error);
-        }
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({ error: 'ENV ناقص است: SUPABASE_URL یا SUPABASE_SERVICE_ROLE_KEY تنظیم نشده' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // 1. Find or create branch
+    let { data: branch, error: branchError } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('name', input.branch)
+      .single();
+
+    if (branchError && branchError.code === 'PGRST116') {
+      const { data: newBranch, error: createBranchError } = await supabase
+        .from('branches')
+        .insert({ name: input.branch })
+        .select('id')
+        .single();
+      if (createBranchError) throw new Error(`خطا در ایجاد شاخه: ${createBranchError.message}`);
+      branch = newBranch;
+    } else if (branchError) {
+      throw new Error(`خطا در یافتن شاخه: ${branchError.message}`);
+    }
+
+    // 2. Find or create grade
+    let { data: grade, error: gradeError } = await supabase
+      .from('grades')
+      .select('id')
+      .eq('branch_id', branch.id)
+      .eq('name', input.grade)
+      .single();
+
+    if (gradeError && gradeError.code === 'PGRST116') {
+      const { data: newGrade, error: createGradeError } = await supabase
+        .from('grades')
+        .insert({ 
+          branch_id: branch.id, 
+          name: input.grade 
+        })
+        .select('id')
+        .single();
+      if (createGradeError) throw new Error(`خطا در ایجاد پایه: ${createGradeError.message}`);
+      grade = newGrade;
+    } else if (gradeError) {
+      throw new Error(`خطا در یافتن پایه: ${gradeError.message}`);
+    }
+
+    // 3. Find or create track (if provided)
+    let track = null;
+    if (input.track) {
+      let { data: trackData, error: trackError } = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('name', input.track)
+        .single();
+
+      if (trackError && trackError.code === 'PGRST116') {
+        const { data: newTrack, error: createTrackError } = await supabase
+          .from('tracks')
+          .insert({ name: input.track })
+          .select('id')
+          .single();
+        if (createTrackError) throw new Error(`خطا در ایجاد رشته: ${createTrackError.message}`);
+        track = newTrack;
+      } else if (trackError) {
+        throw new Error(`خطا در یافتن رشته: ${trackError.message}`);
       } else {
-        Logger.error("❌ [VIDEO-UPLOAD] HTTP error: ${response.status}");
-        throw Exception('خطا در ارتباط با سرور - کد: ${response.status}');
+        track = trackData;
       }
-    } catch (e) {
-      Logger.error("❌ [VIDEO-UPLOAD] Error uploading video", e);
-      rethrow;
+    }
+
+    // 4. Find or create subject
+    let { data: subject, error: subjectError } = await supabase
+      .from('subjects')
+      .select('id')
+      .eq('slug', input.subject_slug)
+      .single();
+
+    if (subjectError && subjectError.code === 'PGRST116') {
+      const iconPath = `assets/images/icon-darsha/${input.subject_slug}.png`;
+      const bookCoverPath = `assets/images/book-covers/${input.subject_slug}${input.grade}.jpg`;
+      
+      const { data: newSubject, error: createSubjectError } = await supabase
+        .from('subjects')
+        .insert({ 
+          name: input.subject,
+          slug: input.subject_slug,
+          icon_path: iconPath,
+          book_cover_path: bookCoverPath
+        })
+        .select('id')
+        .single();
+      if (createSubjectError) throw new Error(`خطا در ایجاد درس: ${createSubjectError.message}`);
+      subject = newSubject;
+    } else if (subjectError) {
+      throw new Error(`خطا در یافتن درس: ${subjectError.message}`);
+    }
+
+    // 5. Find or create subject_offer
+    let subjectOfferQuery = supabase
+      .from('subject_offers')
+      .select('id')
+      .eq('subject_id', subject.id)
+      .eq('grade_id', grade.id);
+
+    if (track?.id) {
+      subjectOfferQuery = subjectOfferQuery.eq('track_id', track.id);
+    } else {
+      subjectOfferQuery = subjectOfferQuery.is('track_id', null);
+    }
+
+    let { data: subjectOffer, error: subjectOfferError } = await subjectOfferQuery.single();
+
+    if (subjectOfferError && subjectOfferError.code === 'PGRST116') {
+      const { data: newSubjectOffer, error: createSubjectOfferError } = await supabase
+        .from('subject_offers')
+        .insert({ 
+          subject_id: subject.id,
+          grade_id: grade.id,
+          track_id: track?.id || null
+        })
+        .select('id')
+        .single();
+      if (createSubjectOfferError) throw new Error(`خطا در ایجاد ارائه درس: ${createSubjectOfferError.message}`);
+      subjectOffer = newSubjectOffer;
+    } else if (subjectOfferError) {
+      throw new Error(`خطا در یافتن ارائه درس: ${subjectOfferError.message}`);
+    }
+
+    // 6. Find or create chapter
+    let { data: chapter, error: chapterError } = await supabase
+      .from('chapters')
+      .select('id')
+      .eq('subject_offer_id', subjectOffer.id)
+      .eq('chapter_order', input.chapter_order)
+      .single();
+
+    if (chapterError && chapterError.code === 'PGRST116') {
+      const chapterImagePath = `assets/images/chapter-images/${input.subject_slug}${input.grade}_ch${input.chapter_order}.jpg`;
+      
+      const { data: newChapter, error: createChapterError } = await supabase
+        .from('chapters')
+        .insert({ 
+          subject_offer_id: subjectOffer.id,
+          chapter_order: input.chapter_order,
+          title: input.chapter_title,
+          chapter_image_path: chapterImagePath
+        })
+        .select('id')
+        .single();
+      if (createChapterError) throw new Error(`خطا در ایجاد فصل: ${createChapterError.message}`);
+      chapter = newChapter;
+    } else if (chapterError) {
+      throw new Error(`خطا در یافتن فصل: ${chapterError.message}`);
+    }
+
+    // 7. Find or create teacher (مرحله 8 در کد قدیم)
+    let { data: teacher, error: teacherError } = await supabase
+      .from('teachers')
+      .select('id')
+      .eq('name', input.teacher_name)
+      .single();
+
+    if (teacherError && teacherError.code === 'PGRST116') {
+      const { data: newTeacher, error: createTeacherError } = await supabase
+        .from('teachers')
+        .insert({ name: input.teacher_name })
+        .select('id')
+        .single();
+      if (createTeacherError) throw new Error(`خطا در ایجاد استاد: ${createTeacherError.message}`);
+      teacher = newTeacher;
+    } else if (teacherError) {
+      throw new Error(`خطا در یافتن استاد: ${teacherError.message}`);
+    }
+
+    // 8. Create/Update lesson_video (بدون نیاز به lesson)
+    const styleMap: Record<string, 'note' | 'book' | 'sample'> = {
+      'note': 'note',
+      'book': 'book',
+      'sample': 'sample',
+      'جزوه': 'note',
+      'کتاب درسی': 'book',
+      'نمونه سوال': 'sample',
+    };
+    const normalizedStyle = styleMap[String(input.style)] ?? 'note';
+
+    const { data: lessonVideo, error: lessonVideoError } = await supabase
+      .from('lesson_videos')
+      .upsert({
+        chapter_id: chapter.id,
+        chapter_order: input.chapter_order,
+        chapter_title: input.chapter_title,
+        lesson_order: input.lesson_order,
+        lesson_title: input.lesson_title,
+        teacher_id: teacher.id,
+        style: normalizedStyle,
+        aparat_url: input.aparat_url || '',
+        duration_sec: input.duration_sec,
+        tags: input.tags || [],
+        prereq_lesson_id: input.prereq_lesson_id || null,
+        content_status: input.content_status || 'published',
+        active: input.active !== false,
+        embed_html: input.embed_html || null,
+        allow_landscape: input.allow_landscape !== false,
+        note_pdf_url: input.note_pdf_url ?? null,
+        exercise_pdf_url: input.exercise_pdf_url ?? null
+      }, {
+        onConflict: 'chapter_id,lesson_order,lesson_title,teacher_id,style',
+        ignoreDuplicates: false
+      })
+      .select('id')
+      .single();
+
+    if (lessonVideoError) {
+      throw new Error(`خطا در ایجاد ویدیو درس: ${lessonVideoError.message}`);
+    }
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: "محتوا با موفقیت ایجاد شد",
+        data: {
+          branch_id: branch.id,
+          grade_id: grade.id,
+          track_id: track?.id || null,
+          subject_id: subject.id,
+          subject_offer_id: subjectOffer.id,
+          chapter_id: chapter.id,
+          teacher_id: teacher.id,
+          lesson_video_id: lessonVideo.id
+        }
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error("Error in create-content function:", error);
+    return new Response(
+      JSON.stringify({ error: (error as Error).message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
+```
+
+---
+
+## 3. Edge Function: update-content/index.ts (تغییرات)
+
+### تغییر select در check (خط 53):
+```typescript
+// تغییر از:
+.select('id, teacher_id, lesson_id')
+
+// به:
+.select('id, teacher_id, chapter_id')
+```
+
+### تغییر select (خطوط 108-132):
+
+```typescript
+// تغییر از:
+.select(`
+  id,
+  aparat_url,
+  duration_sec,
+  tags,
+  prereq_lesson_id,
+  active,
+  content_status,
+  style,
+  view_count,
+  teachers!inner(name),
+  lessons!inner(
+    title,
+    chapters!inner(
+      title,
+      chapter_order,
+      subject_offers!inner(
+        subjects!inner(name, slug),
+        grades!inner(name),
+        tracks(name)
+      )
+    )
+  )
+`)
+
+// به:
+.select(`
+  id,
+  chapter_id,
+  chapter_order,
+  chapter_title,
+  lesson_order,
+  lesson_title,
+  aparat_url,
+  duration_sec,
+  tags,
+  prereq_lesson_id,
+  active,
+  content_status,
+  style,
+  view_count,
+  embed_html,
+  allow_landscape,
+  note_pdf_url,
+  exercise_pdf_url,
+  teachers!inner(name)
+`)
+```
+
+---
+
+## 4. Flutter Model: lesson_video.dart (کامل)
+
+```dart
+class LessonVideo {
+  final int id;
+  final int chapterId;  // ← جدید
+  final int chapterOrder;  // ← جدید
+  final String chapterTitle;  // ← جدید
+  final int lessonOrder;  // ← جدید
+  final String lessonTitle;  // ← جدید
+  final int teacherId;
+  final String style;
+  final String aparatUrl;
+  final int durationSec;
+  final int viewCount;
+  final List<String> tags;
+  final String contentStatus;
+  final bool active;
+  final String? embedHtml;
+  final bool allowLandscape;
+  final String? notePdfUrl;
+  final String? exercisePdfUrl;
+
+  LessonVideo({
+    required this.id,
+    required this.chapterId,
+    required this.chapterOrder,
+    required this.chapterTitle,
+    required this.lessonOrder,
+    required this.lessonTitle,
+    required this.teacherId,
+    required this.style,
+    required this.aparatUrl,
+    required this.durationSec,
+    required this.viewCount,
+    required this.tags,
+    required this.contentStatus,
+    required this.active,
+    this.embedHtml,
+    this.allowLandscape = true,
+    this.notePdfUrl,
+    this.exercisePdfUrl,
+  });
+
+  factory LessonVideo.fromJson(Map<String, dynamic> json) {
+    return LessonVideo(
+      id: json['id'] as int,
+      chapterId: json['chapter_id'] as int,
+      chapterOrder: json['chapter_order'] as int,
+      chapterTitle: json['chapter_title'] as String,
+      lessonOrder: json['lesson_order'] as int,
+      lessonTitle: json['lesson_title'] as String,
+      teacherId: json['teacher_id'] as int,
+      style: json['style'] as String,
+      aparatUrl: json['aparat_url'] as String,
+      durationSec: (json['duration_sec'] as num).toInt(),
+      viewCount: (json['view_count'] as num).toInt(),
+      tags: ((json['tags'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      contentStatus: json['content_status'] as String,
+      active: (json['active'] as bool?) ?? true,
+      embedHtml: json['embed_html'] as String?,
+      allowLandscape: (json['allow_landscape'] as bool?) ?? true,
+      notePdfUrl: json['note_pdf_url'] as String?,
+      exercisePdfUrl: json['exercise_pdf_url'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'chapter_id': chapterId,
+      'chapter_order': chapterOrder,
+      'chapter_title': chapterTitle,
+      'lesson_order': lessonOrder,
+      'lesson_title': lessonTitle,
+      'teacher_id': teacherId,
+      'style': style,
+      'aparat_url': aparatUrl,
+      'duration_sec': durationSec,
+      'view_count': viewCount,
+      'tags': tags,
+      'content_status': contentStatus,
+      'active': active,
+      'embed_html': embedHtml,
+      'allow_landscape': allowLandscape,
+      'note_pdf_url': notePdfUrl,
+      'exercise_pdf_url': exercisePdfUrl,
+    };
+  }
+}
+```
+
+---
+
+## 5. Flutter Service: cached_content_service.dart (تغییرات)
+
+### تغییر getLessonVideos:
+
+```dart
+/// دریافت ویدیوهای درس از Mini-Request Hive Box
+static Future<List<LessonVideo>> getLessonVideos(
+  int chapterId, {  // ← تغییر از lessonId به chapterId
+  required int gradeId,
+  int? trackId,
+}) async {
+  final boxName = _getMiniRequestBoxName(gradeId, trackId);
+  
+  Logger.info('🚀 [MINI-REQUEST] Loading videos from Hive for chapter: $chapterId');
+  
+  try {
+    final box = await Hive.openBox(boxName);
+    final videosJson = box.get('videos');
+    
+    if (videosJson == null) {
+      Logger.info('⚠️ [MINI-REQUEST] No videos in Hive');
+      return [];
+    }
+    
+    final Map<String, dynamic> allVideos = jsonDecode(videosJson);
+    List<dynamic>? videosList = allVideos[chapterId.toString()];  // ← تغییر از lessonId
+    
+    if (videosList == null || videosList.isEmpty) return [];
+    
+    return videosList.map((j) => LessonVideo.fromJson(j)).toList();
+  } catch (e) {
+    Logger.error('❌ [MINI-REQUEST] Error reading videos from Hive', e);
+    return [];
+  }
+}
+```
+
+### حذف getLessons (خطوط 107-137):
+این متد کامل حذف می‌شود.
+
+---
+
+## 6. Flutter Service: content_service.dart (تغییرات)
+
+### تغییر getLessonVideos:
+
+```dart
+Future<List<LessonVideo>> getLessonVideos(int chapterId) async {  // ← تغییر از lessonId
+  final data = await _supabase
+      .from('lesson_videos')
+      .select()
+      .eq('chapter_id', chapterId)  // ← تغییر از lesson_id
+      .eq('active', true)
+      .order('lesson_order', ascending: true)
+      .order('style', ascending: true);
+  
+  return data.map((j) => LessonVideo.fromJson(j as Map<String, dynamic>)).toList();
+}
+```
+
+### حذف getLessons (خط 145):
+این متد کامل حذف می‌شود.
+
+---
+
+## 7. Flutter Service: mini_request_service.dart (تغییرات)
+
+### حذف _loadLessonsMetadata (خطوط 668-722):
+این متد کامل حذف می‌شود.
+
+### تغییر _loadVideosMetadata (خطوط 724-802):
+
+```dart
+/// دریافت و کش کردن videos (metadata) برای تمام chapters
+Future<void> _loadVideosMetadata(int grade, int? track) async {
+  try {
+    Logger.info('🎥 [MINI-REQUEST] Loading videos metadata: grade=$grade track=$track');
+    
+    // دریافت chapters از Hive
+    final boxName = _getBoxName(grade, track);
+    final box = await Hive.openBox(boxName);
+    final chaptersJson = box.get('chapters');
+    
+    if (chaptersJson == null) {
+      Logger.info('⚠️ [MINI-REQUEST] No chapters found, cannot load videos');
+      return;
+    }
+    
+    final Map<String, dynamic> allChapters = jsonDecode(chaptersJson);
+    if (allChapters.isEmpty) {
+      Logger.info('⚠️ [MINI-REQUEST] Chapters map is empty, skipping videos');
+      return;
+    }
+    
+    // برای هر chapter، videos را دانلود کن
+    final Map<String, List<dynamic>> videosByChapter = {};  // ← تغییر از videosByLesson
+    
+    // تمام chapters را از همه subject_offers جمع کن (ساده‌تر با expand)
+    final allChaptersList = allChapters.values
+        .expand((chaptersList) => chaptersList is List ? chaptersList : [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    
+    Logger.debug('🎥 [MINI-REQUEST] Found ${allChaptersList.length} chapters to load videos for');
+    
+    for (final chapter in allChaptersList) {
+      try {
+        // Query videos برای این chapter (به جای lesson)
+        final videosData = await _supabase
+            .from('lesson_videos')
+            .select()
+            .eq('chapter_id', chapter['id'])  // ← تغییر از lesson_id
+            .eq('active', true)
+            .order('lesson_order', ascending: true)
+            .order('style', ascending: true)
+            as List<dynamic>;
+        
+        videosByChapter[chapter['id'].toString()] = videosData;  // ← تغییر از lessonId
+      } catch (e) {
+        Logger.error('❌ [MINI-REQUEST] Error loading videos for chapter ${chapter['id']}', e);
+      }
+    }
+    
+    // ذخیره videos در Hive به صورت Map: {chapterId: [videos]}
+    await box.put('videos', jsonEncode(videosByChapter));
+  } catch (e) {
+    Logger.error('❌ [MINI-REQUEST] Error loading videos metadata', e);
+  }
+}
+```
+
+---
+
+## 8. Flutter UI: chapter_screen.dart (تغییرات اصلی)
+
+### تغییر State:
+
+```dart
+class _ChapterScreenState extends State<ChapterScreen> {
+  bool _loading = false;
+  List<LessonVideo> _allVideos = [];  // ← تغییر از _lessons و _videosByLesson
+  String _selectedStyle = 'جزوه';
+  Map<String, String> _teachersMap = {};
+  // ...
+}
+```
+
+### تغییر _load:
+
+```dart
+Future<void> _load() async {
+  setState(() => _loading = true);
+  
+  try {
+    // مستقیماً ویدیوها را از chapter می‌گیریم (بدون نیاز به lessons)
+    final videos = await CachedContentService.getLessonVideos(
+      widget.chapter.id,  // chapterId به جای lessonId
+      gradeId: widget.gradeId,
+      trackId: widget.trackId,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _allVideos = videos;
+      _loading = false;
+    });
+  } catch (e) {
+    Logger.error('Error loading videos', e);
+    if (mounted) {
+      setState(() => _loading = false);
     }
   }
 }
 ```
 
-### فایل جدید: `lib/models/video_upload/video_upload_form_data.dart`
+### تغییر build (بخش لیست):
 
 ```dart
-/// مدل داده فرم آپلود ویدیو
-class VideoUploadFormData {
-  String? branch;
-  String? grade;
-  String? track;
-  String? subject;
-  String? subjectSlug;
-  String? chapterTitle;
-  int? chapterOrder;
-  String? style; // جزوه، نمونه سوال، کتاب درسی
-  String? lessonTitle;
-  int? lessonOrder;
-  String? teacherName;
-  int? durationHours;
-  int? durationMinutes;
-  int? durationSeconds;
-  String? tags; // با کاما جدا شده
-  String? embedHtml;
-  String? notePdfUrl;
-  String? exercisePdfUrl;
-  
-  VideoUploadFormData();
-  
-  /// تبدیل مدت زمان به ثانیه
-  int get durationInSeconds {
-    final hours = durationHours ?? 0;
-    final minutes = durationMinutes ?? 0;
-    final seconds = durationSeconds ?? 0;
-    return (hours * 3600) + (minutes * 60) + seconds;
-  }
-  
-  /// تبدیل تگ‌ها به لیست
-  List<String> get tagsList {
-    if (tags == null || tags!.isEmpty) return [];
-    return tags!
-        .split(',')
-        .map((tag) => tag.trim())
-        .where((tag) => tag.isNotEmpty)
-        .toList();
-  }
-  
-  /// اعتبارسنجی فرم (PDF اختیاری است طبق PHP)
-  String? validate() {
-    if (branch == null || branch!.isEmpty) return 'شاخه را انتخاب کنید';
-    if (grade == null || grade!.isEmpty) return 'پایه را انتخاب کنید';
-    if (subject == null || subject!.isEmpty) return 'درس را انتخاب کنید';
-    if (subjectSlug == null || subjectSlug!.isEmpty) return 'اسلاگ درس را انتخاب کنید';
-    if (chapterTitle == null || chapterTitle!.isEmpty) return 'عنوان فصل را وارد کنید';
-    if (chapterOrder == null || chapterOrder! < 1) return 'شماره فصل را وارد کنید';
-    if (style == null || style!.isEmpty) return 'نوع محتوا را انتخاب کنید';
-    if (lessonTitle == null || lessonTitle!.isEmpty) return 'عنوان درس را وارد کنید';
-    if (lessonOrder == null || lessonOrder! < 1) return 'شماره درس را وارد کنید';
-    if (teacherName == null || teacherName!.isEmpty) return 'نام استاد را وارد کنید';
-    if (durationInSeconds <= 0) return 'مدت زمان باید بیشتر از صفر باشد';
-    
-    // PDF اختیاری است (طبق PHP فقط توصیه می‌شود)
-    // اعتبارسنجی PDF حذف شد
-    
-    return null; // فرم معتبر است
-  }
-}
-```
-
-### فایل جدید: `lib/screens/video_upload/video_upload_screen.dart`
-
-**نکته**: این فایل باید کامل شود با تمام 32 درس از PHP (خطوط 117-152 فایل PHP)
-
-```dart
-import 'package:flutter/material.dart';
-import '../../services/video_upload/video_upload_service.dart';
-import '../../models/video_upload/video_upload_form_data.dart';
-import '../../utils/logger.dart';
-
-class VideoUploadScreen extends StatefulWidget {
-  const VideoUploadScreen({super.key});
-
-  @override
-  State<VideoUploadScreen> createState() => _VideoUploadScreenState();
-}
-
-class _VideoUploadScreenState extends State<VideoUploadScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _formData = VideoUploadFormData();
-  final _uploadService = VideoUploadService();
-  bool _isUploading = false;
-  
-  // لیست کامل دروس فارسی و اسلاگ‌ها (32 درس از PHP)
-  final Map<String, String> _subjectOptions = {
-    'ریاضی': 'riazi',
-    'علوم': 'olom',
-    'فارسی': 'farsi',
-    'قرآن': 'quran',
-    'مطالعات اجتماعی': 'motaleat',
-    'هدیه های آسمانی': 'hediye',
-    'نگارش': 'negaresh',
-    'عربی': 'arabi',
-    'انگلیسی': 'englisi',
-    'دینی': 'dini',
-    'فیزیک': 'fizik',
-    'شیمی': 'shimi',
-    'هندسه': 'hendese',
-    'هنر': 'honar',
-    'جغرافیا': 'joghrafia',
-    'فناوری': 'fanavari',
-    'تفکر و سبک زندگی': 'tafakor',
-    'حسابان': 'hesaban',
-    'زمین شناسی': 'zamin',
-    'محیط زیست': 'mohit',
-    'تاریخ': 'tarikh',
-    'سلامت و بهداشت': 'salamat',
-    'هویت اجتماعی': 'hoviat',
-    'مدیریت خانواده': 'modiriat',
-    'ریاضیات گسسته': 'gosaste',
-    'آمادگی دفاعی': 'amadegi',
-    'اقتصاد': 'eghtesad',
-    'علوم و فنون ادبی': 'fonon',
-    'جامعه شناسی': 'jameye',
-    'کارگاه کارآفرینی': 'kargah',
-    'منطق': 'mantegh',
-    'فلسفه': 'falsafe',
-    'روانشناسی': 'ravanshenasi',
-    'زیست شناسی': 'zist',
-  };
-  
-  // داده‌های پایه‌ها (از PHP)
-  final Map<String, List<String>> _gradesData = {
-    'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
-    'متوسطه اول': ['هفتم', 'هشتم', 'نهم'],
-    'متوسطه دوم': ['دهم', 'یازدهم', 'دوازدهم'],
-  };
-  
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'آپلود ویدیو',
-          style: TextStyle(fontFamily: 'IRANSansXFaNum'),
-        ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // فیلدهای فرم طبق PHP - باید کامل شود
-            // شاخه، پایه، رشته، درس، فصل، درس، استاد، مدت زمان، تگ‌ها، embed، PDFها
-            
-            // دکمه ارسال
-            ElevatedButton(
-              onPressed: _isUploading ? null : _handleSubmit,
-              child: _isUploading
-                  ? const CircularProgressIndicator()
-                  : const Text('ارسال ویدیو'),
+// در build method، به جای منطق پیچیده grouping:
+: RefreshIndicator(
+    onRefresh: () async {
+      AppCacheManager.clearCache('videos_chapter_${widget.chapter.id}');  // ← تغییر cache key
+      await _load();
+    },
+    child: _allVideos.isEmpty
+        ? SingleChildScrollView(
+            physics: AppScrollPhysics.smooth,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: EmptyStateWidgets.noLessonContent(context),
+              ),
             ),
-          ],
+          )
+        : _buildVideosList(context, theme, darkBlue),
+  )
+
+// متد جدید برای ساخت لیست ویدیوها (ساده‌تر)
+Widget _buildVideosList(BuildContext context, ThemeData theme, Color darkBlue) {
+  // فیلتر بر اساس style انتخابی
+  final filteredVideos = _allVideos
+      .where((v) => _getStyleName(v.style) == _selectedStyle)
+      .toList();
+  
+  // مرتب‌سازی بر اساس lesson_order و سپس lesson_title
+  filteredVideos.sort((a, b) {
+    final orderCompare = a.lessonOrder.compareTo(b.lessonOrder);
+    if (orderCompare != 0) return orderCompare;
+    return a.lessonTitle.compareTo(b.lessonTitle);
+  });
+
+  if (filteredVideos.isEmpty) {
+    return SingleChildScrollView(
+      physics: AppScrollPhysics.smooth,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: EmptyStateWidgets.noEducationContent(context),
         ),
       ),
     );
   }
-  
-  Future<void> _handleSubmit() async {
-    if (!_formKey.currentState!.validate()) return;
-    
-    final error = _formData.validate();
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
-      return;
-    }
-    
-    setState(() => _isUploading = true);
-    
-    try {
-      await _uploadService.uploadVideo(
-        branch: _formData.branch!,
-        grade: _formData.grade!,
-        track: _formData.track,
-        subject: _formData.subject!,
-        subjectSlug: _formData.subjectSlug!,
-        chapterTitle: _formData.chapterTitle!,
-        chapterOrder: _formData.chapterOrder!,
-        style: _formData.style!,
-        lessonTitle: _formData.lessonTitle!,
-        lessonOrder: _formData.lessonOrder!,
-        teacherName: _formData.teacherName!,
-        durationSec: _formData.durationInSeconds,
-        tags: _formData.tagsList,
-        embedHtml: _formData.embedHtml,
-        notePdfUrl: _formData.notePdfUrl,
-        exercisePdfUrl: _formData.exercisePdfUrl,
-      );
+
+  return ListView.builder(
+    physics: AppScrollPhysics.gentle,
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    itemCount: filteredVideos.length,
+    itemBuilder: (ctx, i) {
+      final video = filteredVideos[i];
+      final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+      final styleName = _getStyleName(video.style);
+      final title = '${video.lessonTitle} - $teacherName - $styleName';
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ ویدیو با موفقیت ثبت شد')),
-        );
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      Logger.error("❌ [VIDEO-UPLOAD] Error", e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ خطا: ${e.toString()}')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
-    }
-  }
+      return _buildVideoCard(
+        video: video,
+        title: title,
+        theme: theme,
+        darkBlue: darkBlue,
+      );
+    },
+  );
 }
 ```
 
-### تغییرات در `lib/screens/home_screen.dart`:
-
-**1. حذف متغیرها و متدهای مرتبط با بنر:**
+### تغییر متدهای دیگر در chapter_screen:
 
 ```dart
-// حذف از state class:
-// - List<AppBanner> _banners
-// - PageController _bannerController
-// - int _bannerIndex
-// - Timer? _bannerTimer
-// - bool _isLoadingBanners
-
-// حذف از initState:
-// - _bannerController = PageController(viewportFraction: 0.92);
-// - _loadBanners();
-// - _startBannerTimer();
-
-// حذف از dispose:
-// - _bannerTimer?.cancel();
-// - _bannerController.dispose();
-
-// حذف متدها:
-// - _loadBanners() (خطوط 303-349)
-// - _startBannerTimer() (خطوط 146-148)
-// - _handleBannerTap() (خطوط 633-852)
-// - _handleExternalBannerTap() (خطوط 854-910)
-// - _buildBannerSlider() (خطوط 1201-1272)
-```
-
-**2. تغییر در `_buildScrollableContent` (خط 1187):**
-
-```dart
-// از:
-_buildBannerSlider(context),
-
-// به:
-_buildVideoUploadContainer(context),
-```
-
-**3. اضافه کردن متد جدید `_buildVideoUploadContainer`:**
-
-```dart
-Widget _buildVideoUploadContainer(BuildContext context) {
-  return Container(
-    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    height: 180, // همان ارتفاع بنر قبلی
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-      ),
-    ),
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pushNamed('/video-upload');
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.add_circle_outline,
-              size: 64,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'اضافه کردن ویدیو',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontFamily: 'IRANSansXFaNum',
-                  ),
+// تغییر _buildVideoCard (حذف وابستگی به Lesson):
+Widget _buildVideoCard(
+  LessonVideo video,
+  String title,
+  ThemeData theme,
+  Color darkBlue,
+) {
+  // حذف: final lesson = _lessons!.firstWhere(...)
+  // استفاده مستقیم از video.lessonTitle و video.lessonOrder
+  
+  return GestureDetector(
+    onTap: () {
+      if (video.embedHtml != null && video.embedHtml!.isNotEmpty) {
+        _openVideoPopup(video);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'ویدیو در دسترس نیست',
+              textAlign: TextAlign.right,
               textDirection: TextDirection.rtl,
+              style: TextStyle(fontFamily: 'IRANSansXFaNum'),
             ),
-          ],
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    },
+    child: Container(
+      // ... کد کارت ویدیو
+      // استفاده از video.lessonTitle به جای lesson.title
+      // استفاده از video.lessonOrder به جای lesson.lessonOrder
+    ),
+  );
+}
+
+// تغییر _openVideoPopup (حذف وابستگی به Lesson):
+void _openVideoPopup(LessonVideo video) {
+  final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+  
+  showDialog(
+    context: context,
+    builder: (context) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text(
+          'جزئیات ویدیو',
+          style: TextStyle(fontFamily: 'IRANSansXFaNum'),
         ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _kv('شناسه ویدیو', video.id.toString()),
+                _kv('درس', video.lessonTitle),  // ← استفاده مستقیم از video.lessonTitle
+                _kv('استاد', teacherName),
+                _kv('نوع محتوا', _getStyleName(video.style)),
+                _kv('وضعیت محتوا', video.contentStatus),
+                _kv('لینک آپارات', video.aparatUrl.isNotEmpty ? video.aparatUrl : '-'),
+                _kv('مدت زمان', _formatDuration(video.durationSec)),
+                _kv('تگ‌ها', video.tags.isNotEmpty ? video.tags.join(', ') : '-'),
+                if (video.notePdfUrl != null && video.notePdfUrl!.isNotEmpty)
+                  _kv('لینک PDF جزوه', video.notePdfUrl!),
+                if (video.exercisePdfUrl != null && video.exercisePdfUrl!.isNotEmpty)
+                  _kv('لینک PDF نمونه سوال', video.exercisePdfUrl!),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('ویرایش', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('حذف', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          ),
+        ],
       ),
     ),
   );
 }
 ```
 
-**4. حذف از `_isAnyAsyncOperationRunning` (خط 54):**
+---
+
+## ⚠️ نکات مهم و مشکلات احتمالی
+
+### 1. Migration SQL - بررسی داده‌های موجود
+- **قبل از اجرای migration**: حتماً backup بگیرید
+- **گام 2.5**: اگر رکوردهای بدون `lesson_id` وجود دارند، حذف می‌شوند
+- **گام 3**: اگر UPDATE موفق نبود، NOT NULL خطا می‌دهد
+- **گام 4.5**: ✅ اضافه شد - حذف FK `prereq_lesson_id` قبل از حذف lessons
+- **گام 5**: ✅ اصلاح شد - ابتدا constraint قدیمی حذف می‌شود، سپس constraint جدید اضافه می‌شود
+
+### 2. Edge Function create-content
+- **onConflict**: ✅ اصلاح شد - باید ستون‌های constraint را مشخص کنیم (`chapter_id,lesson_order,lesson_title,teacher_id,style`)
+- **ignoreDuplicates**: ✅ اضافه شد - باید `false` باشد تا رکوردهای موجود update شوند
+- **تست**: بعد از deploy، حتماً تست کنید که upsert درست کار می‌کند
+
+### 3. Edge Function update-content
+- **خط 53**: باید `lesson_id` را به `chapter_id` تغییر دهید
+- **خط 108-131**: select query باید تغییر کند (حذف `lessons!inner`)
+
+### 4. Flutter Model lesson_video.dart
+- **توجه**: فیلدهای جدید (`chapterId`, `chapterOrder`, `chapterTitle`, `lessonOrder`, `lessonTitle`) باید اضافه شوند
+- **از**: `lessonId` باید حذف شود
+
+### 5. Flutter Services
+- **cached_content_service.dart**: متد `getLessons` باید حذف شود (اما ممکن است در `subject_screen` یا `dev_settings` استفاده شود - بررسی کنید)
+- **content_service.dart**: متد `getLessons` باید حذف شود
+
+### 6. Flutter UI chapter_screen.dart
+- **تغییرات بزرگ**: دیگر از `Lesson` استفاده نمی‌شود
+- **حذف**: `_lessons` و `_videosByLesson` state variables
+- **اضافه**: فقط `_allVideos` (List<LessonVideo>)
+- **تغییر**: تمام جاهایی که از `lesson.title` استفاده می‌شود → `video.lessonTitle`
+- **تغییر**: تمام جاهایی که از `lesson.lessonOrder` استفاده می‌شود → `video.lessonOrder`
+
+### 7. صفحات دیگر که ممکن است نیاز به تغییر داشته باشند
+- **subject_screen.dart**: اگر از `getLessons` استفاده می‌کند، باید بررسی شود
+- **dev_settings_button.dart**: اگر از `getLessons` استفاده می‌کند، باید بررسی شود
+
+### 8. ترتیب اجرای مراحل
+1. ✅ Migration SQL (اول از همه)
+2. ✅ Deploy Migration
+3. ✅ Edge Function create-content
+4. ✅ Deploy create-content
+5. ✅ Edge Function update-content  
+6. ✅ Deploy update-content
+7. ✅ Flutter Model
+8. ✅ Flutter Services
+9. ✅ Flutter UI
+10. ✅ Flutter Analyze
+
+---
+
+## ⚠️ مشکلات شناسایی شده و اصلاح شده
+
+### ✅ مشکلات برطرف شده:
+
+1. **Migration SQL - Constraint unique_lesson_video**
+   - ✅ اضافه شد: `DROP CONSTRAINT IF EXISTS unique_lesson_video` قبل از ایجاد
+   - ✅ اضافه شد: حذف FK `prereq_lesson_id` قبل از حذف lessons
+
+2. **Edge Function create-content - onConflict**
+   - ✅ اصلاح شد: از `onConflict: 'unique_lesson_video'` به `onConflict: 'chapter_id,lesson_order,lesson_title,teacher_id,style'`
+   - ✅ اضافه شد: `ignoreDuplicates: false` برای update کردن رکوردهای موجود
+
+### ✅ مشکلات باقی‌مانده - راه‌حل‌های ساده:
+
+3. **prereq_lesson_id** ✅ حل شد
+   - ✅ تصمیم: فیلد را نگه می‌داریم اما foreign key را حذف می‌کنیم (قبلاً در Migration گام 4.5 اضافه شد)
+   - ✅ دلیل: در کد Flutter استفاده نمی‌شود، اما ممکن است در آینده استفاده شود
+   - ✅ نتیجه: فقط foreign key حذف می‌شود، فیلد باقی می‌ماند
+
+4. **Flutter - subject_screen.dart** ✅ راه‌حل ساده اضافه شد
+   - ✅ تغییر: مستقیماً از `getLessonVideos(chapter.id)` استفاده می‌کنیم
+   - ✅ کد کامل در بخش 9
+
+5. **Flutter - dev_settings_button.dart** ✅ راه‌حل ساده اضافه شد
+   - ✅ تغییر: حلقه `lessons` حذف می‌شود، مستقیماً `getLessonVideos(ch.id)` صدا زده می‌شود
+   - ✅ کد کامل در بخش 10
+
+6. **Flutter - mini_request_service.dart** ✅ راه‌حل ساده اضافه شد
+   - ✅ تغییر: `_loadLessonsMetadata` حذف می‌شود، `_loadVideosMetadata` از `chapters` استفاده می‌کند
+   - ✅ کد کامل در بخش 11
+
+---
+
+## 9. Flutter UI: subject_screen.dart (کد کامل تغییرات)
+
+### تغییر متد _loadChapterTeachers:
 
 ```dart
-// از:
-return _isProcessingGradeChange || _isLoadingSubjects || _isLoadingBanners;
+// لود کردن ویدیوهای هر فصل برای گرفتن نام واقعی اساتید
+Future<void> _loadChapterTeachers(List<Chapter> chapters) async {
+  _chapterTeachers.clear();
 
-// به:
-return _isProcessingGradeChange || _isLoadingSubjects;
-```
+  for (final chapter in chapters) {
+    try {
+      // ✅ تغییر: مستقیماً ویدیوها را از chapter می‌گیریم (بدون نیاز به lessons)
+      final videos = await CachedContentService.getLessonVideos(
+        chapter.id,  // ← تغییر از lesson.id به chapter.id
+        gradeId: widget.gradeId,
+        trackId: widget.trackId,
+      );
 
-**5. حذف از force reload (خط 420):**
+      // استخراج نام‌های منحصر به فرد اساتید
+      final Set<String> teacherNames = {};
 
-```dart
-// حذف:
-_banners = [];
-```
+      // ✅ تغییر: مستقیماً از videos استفاده می‌کنیم (بدون حلقه lessons)
+      for (final video in videos) {
+        // استفاده از teacherId برای گرفتن نام استاد
+        final teacherName = _getTeacherNameById(video.teacherId);
+        if (teacherName.isNotEmpty) {
+          teacherNames.add(teacherName);
+        }
+      }
 
-### اضافه کردن route در `lib/main.dart`:
-
-```dart
-'/video-upload': (context) =>
-    const SimpleNetworkWrapper(child: VideoUploadScreen()),
+      _chapterTeachers[chapter.id] = teacherNames.toList();
+    } catch (e) {
+      Logger.error('❌ Error loading teachers for chapter ${chapter.id}', e);
+      _chapterTeachers[chapter.id] = [];
+    }
+  }
+}
 ```
 
 ---
 
-## مرحله 4: حذف onboarding و ثبت‌نام
+## 10. Flutter UI: dev_settings_button.dart (کد کامل تغییرات)
 
-### فایل‌های حذف شونده:
-
-1. ✅ `lib/screens/onboarding/onboarding_screen.dart`
-2. ✅ `lib/screens/onboarding/onboarding_step1_screen.dart`
-3. ✅ `lib/screens/onboarding/onboarding_step2_screen.dart`
-4. ✅ `lib/screens/onboarding/onboarding_success_screen.dart`
-
-### مشکلات شناسایی شده:
-
-#### ⚠️ مشکل 4.1: تغییرات در `app_state_manager.dart`
-
-**تغییر متد `appropriateRoute`:**
+### تغییر متد کش کردن دیتا:
 
 ```dart
-String get appropriateRoute {
+// ✅ تغییر: حذف حلقه lessons، مستقیماً از chapters استفاده می‌کنیم
+for (final ch in chapters) {
+  // ✅ تغییر: مستقیماً getLessonVideos را صدا می‌زنیم
+  await CachedContentService.getLessonVideos(
+    ch.id,  // ← تغییر از les.id به ch.id
+    gradeId: grade,
+    trackId: track,
+  );
+}
+```
+
+**کد کامل قبل از تغییر:**
+```dart
+for (final ch in chapters) {
+  final lessons = await CachedContentService.getLessons(
+    ch.id,
+    gradeId: grade,
+    trackId: track,
+  );
+  for (final les in lessons) {
+    await CachedContentService.getLessonVideos(
+      les.id,
+      gradeId: grade,
+      trackId: track,
+    );
+  }
+}
+```
+
+**کد کامل بعد از تغییر:**
+```dart
+for (final ch in chapters) {
+  await CachedContentService.getLessonVideos(
+    ch.id,
+    gradeId: grade,
+    trackId: track,
+  );
+}
+```
+
+---
+
+## 11. Flutter Service: mini_request_service.dart (کد کامل تغییرات)
+
+### حذف متد _loadLessonsMetadata:
+- ✅ این متد کامل حذف می‌شود (خطوط 643-722)
+- ✅ هیچ جای دیگری این متد را صدا نمی‌زند (بررسی شده)
+
+### تغییر متد _loadVideosMetadata:
+
+```dart
+/// دریافت و کش کردن videos (metadata) برای تمام chapters
+Future<void> _loadVideosMetadata(int grade, int? track) async {
   try {
-    Logger.debug('🔍 [ROUTE] Determining appropriate route...');
+    Logger.info('🎥 [MINI-REQUEST] Loading videos metadata: grade=$grade track=$track');
     
-    if (!isUserAuthenticated) {
-      Logger.debug('🔍 [ROUTE] User not authenticated -> /auth');
-      return '/auth'; // به جای /onboarding
+    // ✅ تغییر: دریافت chapters از Hive (به جای lessons)
+    final boxName = _getBoxName(grade, track);
+    final box = await Hive.openBox(boxName);
+    final chaptersJson = box.get('chapters');  // ← تغییر از 'lessons' به 'chapters'
+    
+    if (chaptersJson == null) {
+      Logger.info('⚠️ [MINI-REQUEST] No chapters found, cannot load videos');
+      return;
     }
     
-    // ادمین نیازی به onboarding ندارد
-    // مستقیما به home می‌رود
-    Logger.debug('🔍 [ROUTE] User authenticated -> /home');
-    return '/home';
+    final Map<String, dynamic> allChapters = jsonDecode(chaptersJson);  // ← تغییر از allLessons
+    if (allChapters.isEmpty) {
+      Logger.info('⚠️ [MINI-REQUEST] Chapters map is empty, skipping videos');
+      return;
+    }
+    
+    // ✅ تغییر: برای هر chapter، videos را دانلود کن (به جای lesson)
+    final Map<String, List<dynamic>> videosByChapter = {};  // ← تغییر از videosByLesson
+    
+    // تمام chapters را از همه subject_offers جمع کن (ساده‌تر با expand)
+    final allChaptersList = allChapters.values
+        .expand((chaptersList) => chaptersList is List ? chaptersList : [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    
+    Logger.debug('🎥 [MINI-REQUEST] Found ${allChaptersList.length} chapters to load videos for');
+    
+    for (final chapter in allChaptersList) {
+      try {
+        // ✅ تغییر: Query videos برای این chapter (به جای lesson)
+        final videosData = await _supabase
+            .from('lesson_videos')
+            .select()
+            .eq('chapter_id', chapter['id'])  // ← تغییر از lesson_id به chapter_id
+            .eq('active', true)
+            .order('lesson_order', ascending: true)
+            .order('style', ascending: true)
+            as List<dynamic>;
+        
+        videosByChapter[chapter['id'].toString()] = videosData;  // ← تغییر از lessonId
+      } catch (e) {
+        Logger.error('❌ [MINI-REQUEST] Error loading videos for chapter ${chapter['id']}', e);
+      }
+    }
+    
+    // ✅ تغییر: ذخیره videos در Hive به صورت Map: {chapterId: [videos]}
+    await box.put('videos', jsonEncode(videosByChapter));
   } catch (e) {
-    Logger.error('❌ AppStateManager: Error in appropriateRoute', e);
-    return '/auth'; // در صورت خطا به صفحه ورود
+    Logger.error('❌ [MINI-REQUEST] Error loading videos metadata', e);
   }
 }
 ```
 
-**حذف یا ساده‌سازی متدهای زیر:**
-- `isUserInOnboarding` - دیگر لازم نیست
-- `currentRegistrationStage` - دیگر لازم نیست (یا ساده‌سازی شود)
+### حذف صدا زدن _loadLessonsMetadata:
+- ✅ این متد در 2 جا صدا زده می‌شود (خطوط 235 و 267)
+- ✅ باید این دو صدا زدن حذف شوند
 
-#### ⚠️ مشکل 4.2: تغییرات در `main.dart`
-
-**حذف import های onboarding:**
+**کد قبل از تغییر (خطوط 230-240):**
 ```dart
-// حذف این خطوط:
-import 'screens/onboarding/onboarding_screen.dart';
-import 'screens/onboarding/onboarding_step1_screen.dart';
-import 'screens/onboarding/onboarding_step2_screen.dart';
-import 'screens/onboarding/onboarding_success_screen.dart';
+await _loadChaptersMetadata(grade, track);
+await _loadLessonsMetadata(grade, track);  // ← باید حذف شود
+await _loadVideosMetadata(grade, track);
 ```
 
-**حذف route های onboarding:**
+**کد بعد از تغییر:**
 ```dart
-// حذف این route ها:
-'/onboarding/step1': ...
-'/onboarding/step2': ...
-'/onboarding/success': ...
-'/onboarding': ...
+await _loadChaptersMetadata(grade, track);
+// ✅ حذف شد: await _loadLessonsMetadata(grade, track);
+await _loadVideosMetadata(grade, track);
 ```
 
-**تغییر در `AuthWrapper`:**
-```dart
-// تغییر خط 395-396:
-// از: route = appState.authService.currentProfile == null ? '/onboarding' : initialRouteForDev;
-// به: route = appState.authService.currentProfile == null ? '/auth' : initialRouteForDev;
-
-// تغییر خط 383-386 publicRoutes:
-const publicRoutes = <String>{
-  '/auth', // فقط auth باقی بماند
-};
-```
-
-#### ⚠️ مشکل 4.3: تغییرات در `home_screen.dart`
-
-**تغییر متد `_checkAuthAndRedirect`:**
-
-```dart
-Future<void> _checkAuthAndRedirect() async {
-  await Future.delayed(Duration.zero);
-  if (!mounted) return;
-
-  final appState = context.read<AppStateManager>();
-
-  Logger.debug('🔍 [HOME] Checking auth...');
-  
-  // فقط چک احراز هویت - بدون چک registration stage
-  if (!appState.isUserAuthenticated) {
-    Logger.debug('🔍 [HOME] User not authenticated -> redirecting to /auth');
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (_) => false);
-    return;
-  }
-
-  Logger.debug('🔍 [HOME] Auth OK -> staying in Home');
-}
-```
-
-#### ⚠️ مشکل 4.4: تغییرات در `auth_screen.dart`
-
-**حذف دکمه back به onboarding:**
-```dart
-// حذف یا تغییر خط 93-99:
-// از: onPressed: () { Navigator.of(context).pushReplacement(...OnboardingScreen()); }
-// به: onPressed: () => Navigator.of(context).pop(); // یا حذف کامل leading
-```
+**همین تغییر باید در خط 267 هم اعمال شود**
 
 ---
 
-## 📝 لیست کامل فایل‌های مورد تغییر
+## 📋 چک‌لیست قبل از اجرا
 
-### فایل‌های حذف شونده (10 فایل):
-1. `lib/services/content/banner_service.dart`
-2. `lib/services/mini_request/mini_request_service.dart`
-3. `lib/services/mini_request/mini_request_logger.dart`
-4. `lib/services/image_cache/smart_image_cache_service.dart` (بررسی: اگر فقط برای بنر است)
-5. `lib/models/content/banner.dart`
-6. `lib/widgets/banner/cached_banner.dart`
-7. `lib/screens/onboarding/onboarding_screen.dart`
-8. `lib/screens/onboarding/onboarding_step1_screen.dart`
-9. `lib/screens/onboarding/onboarding_step2_screen.dart`
-10. `lib/screens/onboarding/onboarding_success_screen.dart`
-
-### فایل‌های تغییر شونده (7 فایل):
-1. `lib/services/auth/auth_service.dart` - اضافه کردن چک ادمین (بعد از خط 522)
-2. `lib/screens/auth/verify_otp_screen.dart` - تغییر navigation (خطوط 138-148)
-3. `lib/screens/home_screen.dart` - حذف بنر (حذف متغیرها، متدها، و جایگزینی _buildBannerSlider)
-4. `lib/main.dart` - حذف route های onboarding، اضافه route آپلود
-5. `lib/providers/core/app_state_manager.dart` - ساده‌سازی جریان احراز هویت (تغییر appropriateRoute)
-6. `lib/services/content/cached_content_service.dart` - حذف وابستگی به بنر (حذف import ها، متدها)
-7. `lib/screens/auth/auth_screen.dart` - حذف دکمه back به onboarding (خطوط 93-99)
-
-### فایل‌های جدید (3 فایل):
-1. `lib/services/video_upload/video_upload_service.dart`
-2. `lib/models/video_upload/video_upload_form_data.dart`
-3. `lib/screens/video_upload/video_upload_screen.dart`
+- [x] Backup کامل از دیتابیس گرفته شده
+- [x] تصمیم‌گیری در مورد `prereq_lesson_id` (فیلد نگه داشته می‌شود، FK حذف می‌شود)
+- [x] بررسی که آیا `getLessons` در جاهای دیگر استفاده می‌شود (بررسی شد: فقط در 3 جا)
+- [ ] تست Migration در محیط تست
+- [ ] تست Edge Functions بعد از deploy
+- [ ] تست Flutter app بعد از تغییرات
 
 ---
 
-## ⚠️ مشکلات کلی و پیشنهادات
-
-### 1. وابستگی‌های پیچیده:
-- `CachedContentService` به `BannerService` وابسته است - باید حذف شود
-- `home_screen.dart` به چندین سرویس بنر وابسته است - باید حذف شود
-- باید حذف مرحله به مرحله انجام شود
-
-### 2. ترتیب اجرا:
-1. ابتدا چک ادمین اضافه شود
-2. سپس بنرها حذف شوند
-3. سپس onboarding حذف شود
-4. در آخر آپلود ویدیو اضافه شود
-
-### 3. تست‌ها:
-- بعد از هر مرحله باید `flutter analyze` اجرا شود
-- باید مطمئن شویم که هیچ import یا استفاده از فایل‌های حذف شده باقی نمانده
-
-### 4. کدهای ناقص:
-- `video_upload_screen.dart` باید کامل شود با تمام فیلدهای فرم
-- باید تمام 32 درس اضافه شود
+این فایل شامل تمام کدهای کامل است که در پلن استفاده می‌شوند.
 
 ---
 
-## ✅ قوانین کلی اجرا
+## ✅ گزارش نهایی بررسی پلن
 
-1. **لاگینگ**: استفاده از `Logger.info` و `Logger.error` در تمام مراحل
-2. **سادگی**: کدها ساده و بدون پیچیدگی اضافی
-3. **تست**: بعد از هر مرحله اجرای `flutter analyze`
-4. **کامنت**: تمام کدهای جدید باید کامنت فارسی داشته باشند
-5. **مرحله به مرحله**: منتظر تایید کاربر قبل از رفتن به مرحله بعد
-6. **عدم استفاده از flutter run/build**: فقط `flutter analyze`
+### 📊 خلاصه وضعیت:
 
----
+**نقاط قوت:**
+- ✅ Migration SQL کامل و اصولی است
+- ✅ همه مشکلات بحرانی شناسایی و حل شده‌اند
+- ✅ ترتیب اجرای مراحل منطقی است
+- ✅ قوانین اجرا واضح و مشخص است
+- ✅ کدهای کامل برای همه تغییرات ارائه شده
+- ✅ مشکلات باقی‌مانده شناسایی و راه‌حل داده شده
 
-## 📊 نتیجه‌گیری
+**پوشش تغییرات:**
+- ✅ Migration SQL (گام‌های 1-9)
+- ✅ Edge Function create-content (کامل)
+- ✅ Edge Function update-content (تغییرات مشخص)
+- ✅ Flutter Model lesson_video.dart (کامل)
+- ✅ Flutter Service cached_content_service.dart
+- ✅ Flutter Service content_service.dart
+- ✅ Flutter Service mini_request_service.dart
+- ✅ Flutter UI chapter_screen.dart
+- ✅ Flutter UI subject_screen.dart
+- ✅ Flutter UI dev_settings_button.dart
 
-پلن به طور کلی صحیح است اما نیاز به اصلاحات زیر دارد:
+**مشکلات حل شده:**
+- ✅ Constraint unique_lesson_video
+- ✅ Foreign Key prereq_lesson_id
+- ✅ onConflict در create-content
+- ✅ استفاده از getLessons در 3 فایل
 
-1. ⚠️ مرحله 1 نیاز به اصلاح کد چک ادمین دارد
-2. ⚠️ مرحله 2 نیاز به بررسی دقیق وابستگی‌ها دارد
-3. ⚠️ مرحله 3 نیاز به تکمیل کدها و لیست دروس دارد
-4. ⚠️ مرحله 4 نیاز به حذف همه reference های onboarding دارد
+**نکات مهم:**
+- ⚠️ فیلد `lessonId` باید از `LessonVideo` model حذف شود (در fromJson و toJson هم)
+- ⚠️ متد `getLessons` باید از `cached_content_service.dart` و `content_service.dart` حذف شود
+- ⚠️ مدل `Lesson` ممکن است در جاهای دیگر استفاده شود - بررسی شود
 
-**توصیه**: اجرا باید مرحله به مرحله و با دقت انجام شود تا وابستگی‌ها به درستی مدیریت شوند.
-
----
-
-## ⚠️ هشدارهای مهم:
-
-### 1. بررسی وابستگی‌ها قبل از حذف:
-- قبل از حذف `SmartImageCacheService`، بررسی شود که آیا برای book covers استفاده می‌شود یا نه
-- قبل از حذف `MiniRequestService`، بررسی شود که آیا برای محتوای دیگر استفاده می‌شود یا نه
-- قبل از حذف `getActiveBannersForGrade`، بررسی شود که آیا در جای دیگری استفاده می‌شود یا نه
-
-### 2. اصلاحات کدهای نمونه:
-- ✅ notifyListeners() دو بار فراخوانی نمی‌شود (اصلاح شد)
-- ✅ فقط بخش navigation در verify_otp تغییر می‌کند (اصلاح شد)
-- ✅ جایگزینی _buildBannerSlider با _buildVideoUploadContainer (اصلاح شد)
-
-### 3. بررسی نهایی:
-- بعد از هر مرحله، `flutter analyze` باید اجرا شود
-- باید مطمئن شویم که هیچ import یا استفاده از فایل‌های حذف شده باقی نمانده
-- باید مطمئن شویم که هیچ خطای compile وجود ندارد
+**وضعیت کلی:** ✅ پلن کامل، دقیق و آماده اجرا است
 
 ---
 
-## 🔴 مشکلات بحرانی شناسایی شده و اصلاح شده:
+## 📋 یادداشت برای بعد از اجرای موفق پلن
 
-### مشکل 1: notifyListeners() دو بار فراخوانی
-**وضعیت**: ✅ اصلاح شد - در کد نمونه فقط یک بار فراخوانی می‌شود
+### ⚠️ مهم: این بخش فقط بعد از تایید موفقیت‌آمیز اجرای پلن باید انجام شود
 
-### مشکل 2: بازنویسی کامل متد _verifyOtp
-**وضعیت**: ✅ اصلاح شد - فقط بخش navigation تغییر می‌کند
+**بعد از اینکه:**
+1. ✅ پلن به طور کامل اجرا شد
+2. ✅ تست شد و همه چیز بدون مشکل کار کرد
+3. ✅ کاربر تایید کرد که پلن موفقیت‌آمیز بوده
 
-### مشکل 3: جایگزینی _buildBannerSlider
-**وضعیت**: ✅ اصلاح شد - راهنمای کامل اضافه شد
-
-### مشکل 4: وابستگی‌های پیچیده در CachedContentService
-**وضعیت**: ⚠️ نیاز به بررسی - متدهای مرتبط با بنر باید حذف شوند
-
-### مشکل 5: استفاده از SmartImageCacheService
-**وضعیت**: ⚠️ نیاز به بررسی - احتمالاً برای book covers است نه بنر
-
-### مشکل 6: استفاده از MiniRequestService
-**وضعیت**: ⚠️ نیاز به بررسی - احتمالاً برای محتوای دیگر هم استفاده می‌شود
-
----
-
-## ضمیمه: جداسازی بسته و نام اپلیکیشن برای نصب همزمان (Nardeboun و Nardeboun-Admin)
-
-هدف: اپ ادمین به‌صورت مجزا از اپ محصول نصب شود (بدون overwrite)، و نام نمایشی «Nardeboun Admin» داشته باشد.
-
-### اندروید
-- تغییر ApplicationId (منحصر به‌فرد):
-  - فایل: `android/app/build.gradle.kts`
-  - مقدار `defaultConfig.applicationId` را به مقدار جدا تغییر دهید، مثلاً: `com.nardeboun.admin`
-- تغییر نام نمایشی اپ:
-  - فایل: `android/app/src/main/AndroidManifest.xml`
-  - مقدار `android:label` را به `Nardeboun Admin` تغییر دهید؛ یا در `res/values/strings.xml` کلید `app_name` را به `Nardeboun Admin` تنظیم و در مانیفست از `@string/app_name` استفاده کنید.
-- اطمینان از آیکن مجزا (اختیاری ولی توصیه‌شده):
-  - مسیر آیکن‌ها: `android/app/src/main/res/mipmap-*`
-  - در صورت نیاز از پکیج‌های `flutter_launcher_icons` برای آیکن مجزا استفاده شود.
-
-### iOS
-- تغییر Bundle Identifier (منحصر به‌فرد):
-  - فایل/تنظیم: `ios/Runner.xcodeproj` > Target Runner > Signing & Capabilities
-  - مقدار `PRODUCT_BUNDLE_IDENTIFIER` را به چیزی مانند `com.nardeboun.admin` تغییر دهید.
-- تغییر نام نمایشی اپ:
-  - فایل: `ios/Runner/Info.plist`
-  - کلید `CFBundleDisplayName` را به مقدار `Nardeboun Admin` تنظیم کنید.
-- آیکن مجزا (اختیاری):
-  - مسیر: `ios/Runner/Assets.xcassets/AppIcon.appiconset`
-  - در صورت نیاز ست آیکن مجزا قرار دهید.
-
-### نکات عمومی
-- این تغییرات فقط در مرحله انتشار/بیلد نهایی انجام می‌شوند؛ روی کد منطقی تاثیری ندارند.
-- نام پکیج/باندل باید با اپ محصول متفاوت باشد تا نصب همزمان ممکن شود.
-- پس از اعمال تغییرات، فقط از `flutter analyze` برای بررسی استفاده می‌شود (عدم اجرای build/run طبق قوانین پروژه).
+**گزارش برای نسخه محصول:**
+- ✅ گزارش کامل در فایل `PRODUCT_APP_MIGRATION_REPORT.md` آماده شده است
+- این گزارش شامل تمام تغییرات بک‌اند و تغییرات مورد نیاز در فرانت محصول است
+- گزارش شامل تغییرات مدل‌ها، API Calls، و UI است
+- کدهای کامل قبل و بعد در گزارش موجود است
+- **نکته مهم:** در گزارش قید شده که Mini-Request در نسخه محصول باید حفظ شود و فقط نیاز به به‌روزرسانی دارد (هیچ اشاره‌ای به حذف Mini-Request در نسخه ادمین نشده است)
 

@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:nardeboun/models/content/chapter.dart';
-import 'package:nardeboun/models/content/lesson.dart';
 import 'package:nardeboun/models/content/lesson_video.dart';
 import 'package:nardeboun/models/content/subject.dart';
-import 'package:nardeboun/services/content/cached_content_service.dart';
-import '../services/cache/cache_manager.dart';
+import 'package:nardeboun/services/content/content_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/common/smooth_scroll_physics.dart';
-import 'pdf_reader_screen_pdfx.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'dart:convert';
-import '../services/pdf/pdf_service.dart';
 import '../widgets/bubble_nav_bar.dart';
 import '../widgets/common/empty_state_widget.dart';
 import '../../utils/logger.dart';
@@ -33,34 +28,33 @@ class ChapterScreen extends StatefulWidget {
 }
 
 class _ChapterScreenState extends State<ChapterScreen> {
-  bool _loading = false; // ← شروع با false (بدون Loader برای Hive)
-  List<Lesson>? _lessons; // ← null = هنوز لود نشده
-  Map<int, List<LessonVideo>> _videosByLesson = {};
+  bool _loading = false;
+  List<LessonVideo> _allVideos = [];  // ← تغییر از _lessons و _videosByLesson
   String _selectedStyle = 'جزوه';
-  // WebView وابستگی‌ها حذف شد؛ نمایش پاپ‌آپ فقط با جزئیات ویدیو انجام می‌شود.
   Map<String, String> _teachersMap = {};
 
   // call _loadTeachersMap from existing initState (append there if present)
 
   Future<void> _loadTeachersMap() async {
     try {
-      final boxName =
-          'grade_${widget.gradeId}_${widget.trackId ?? "null"}_content';
-      final box = await Hive.openBox(boxName);
-      final teachersJson = box.get('teachers') as String?;
-      if (teachersJson != null && teachersJson.isNotEmpty) {
-        final Map<String, dynamic> decoded = jsonDecode(teachersJson);
-        final Map<String, String> mapped = decoded.map(
-          (key, value) => MapEntry(key.toString(), (value ?? '').toString()),
-        );
-        if (mounted) {
-          setState(() {
-            _teachersMap = mapped;
-          });
-        }
+      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
+      final supabase = Supabase.instance.client;
+      final teachersData = await supabase
+          .from('teachers')
+          .select('id, name') as List<dynamic>;
+      
+      final Map<String, String> mapped = {};
+      for (final teacher in teachersData) {
+        final teacherMap = teacher as Map<String, dynamic>;
+        mapped[teacherMap['id'].toString()] = teacherMap['name'] ?? '';
+      }
+      if (mounted) {
+        setState(() {
+          _teachersMap = mapped;
+        });
       }
     } catch (e) {
-      // silent
+      Logger.error('Error loading teachers map', e);
     }
   }
 
@@ -73,12 +67,25 @@ class _ChapterScreenState extends State<ChapterScreen> {
         children: [
           Expanded(
             flex: 3,
-            child: Text(key, textAlign: TextAlign.right, textDirection: TextDirection.rtl, style: const TextStyle(fontFamily: 'IRANSansXFaNum', fontWeight: FontWeight.w600)),
+            child: Text(
+              key,
+              textAlign: TextAlign.right,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontFamily: 'IRANSansXFaNum',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
             flex: 7,
-            child: Text(value, textAlign: TextAlign.right, textDirection: TextDirection.rtl, style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+            ),
           ),
         ],
       ),
@@ -93,47 +100,24 @@ class _ChapterScreenState extends State<ChapterScreen> {
   }
 
   Future<void> _load() async {
-    // دریافت نام شاخه اگر trackId موجود باشد
-    if (widget.trackId != null) {
-      try {
-        // Track information is not used in this screen
-      } catch (e) {
-        Logger.error('Error fetching track name', e);
-      }
-    }
-
-    // دریافت مسیر عکس فصل ازbook_covers
-
-    // دریافت لیست درس‌ها و ویدیوها با Cache
-    final lessons = await CachedContentService.getLessons(
-      widget.chapter.id,
-      gradeId: widget.gradeId,
-      trackId: widget.trackId,
-    );
-
-    // بهینه‌سازی: parallel loading برای ویدیوها
-    final map = <int, List<LessonVideo>>{};
-    final futures = lessons.map((l) async {
-      final videos = await CachedContentService.getLessonVideos(
-        l.id,
-        gradeId: widget.gradeId,
-        trackId: widget.trackId,
-      );
-      return MapEntry(l.id, videos);
-    });
-
-    // اجرای موازی همه ویدیوها
-    final results = await Future.wait(futures);
-    for (final entry in results) {
-      map[entry.key] = entry.value;
-    }
+    setState(() => _loading = true);
+    
+    try {
+      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
+      final contentService = ContentService(Supabase.instance.client);
+      final videos = await contentService.getLessonVideos(widget.chapter.id);
 
     if (!mounted) return;
     setState(() {
-      _lessons = lessons;
-      _videosByLesson = map;
+        _allVideos = videos;
       _loading = false;
     });
+    } catch (e) {
+      Logger.error('Error loading videos', e);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   @override
@@ -203,275 +187,28 @@ class _ChapterScreenState extends State<ChapterScreen> {
                                 ),
                               ),
                             ),
-                            // لیست درس‌ها
+                            // لیست ویدیوها
                             Expanded(
-                              child: _lessons == null
-                                  ? const SizedBox.shrink() // ← هنوز لود نشده
-                                  : RefreshIndicator(
+                              child: RefreshIndicator(
                                       onRefresh: () async {
-                                        CachedContentService.refreshVideos();
-                                        AppCacheManager.clearCache(
-                                          'lessons_${widget.chapter.id}',
-                                        );
-                                        await _load();
+                                    // ✅ تغییر: فقط reload از Supabase (بدون cache)
+                                    await _load();
                                       },
-                                      child: _lessons!.isEmpty
+                                  child: _allVideos.isEmpty
                                           ? SingleChildScrollView(
                                               physics: AppScrollPhysics.smooth,
                                               child: Center(
                                                 child: Padding(
-                                                  padding: EdgeInsets.all(32.0),
-                                                  child:
-                                                      EmptyStateWidgets.noLessonContent(
-                                                        context,
-                                                      ),
+                                              padding: const EdgeInsets.all(32.0),
+                                              child: EmptyStateWidgets.noLessonContent(context),
                                                 ),
                                               ),
                                             )
-                                          : Builder(
-                                              builder: (context) {
-                                                // 1) یافتن بالاترین lesson_order که ویدیو برای style انتخابی دارد
-                                                int maxLessonOrderWithVideo = 0;
-                                                for (final lesson
-                                                    in _lessons!) {
-                                                  final videos =
-                                                      _videosByLesson[lesson
-                                                          .id] ??
-                                                      const [];
-                                                  final filteredVideos = videos
-                                                      .where(
-                                                        (v) =>
-                                                            _getStyleName(
-                                                              v.style,
-                                                            ) ==
-                                                            _selectedStyle,
-                                                      )
-                                                      .toList();
-                                                  if (filteredVideos
-                                                          .isNotEmpty &&
-                                                      lesson.lessonOrder >
-                                                          maxLessonOrderWithVideo) {
-                                                    maxLessonOrderWithVideo =
-                                                        lesson.lessonOrder;
-                                                  }
-                                                }
-
-                                                // 2) اگر هیچ ویدیویی برای این سبک نیست: فقط یک EmptyState
-                                                if (maxLessonOrderWithVideo ==
-                                                    0) {
-                                                  return SingleChildScrollView(
-                                                    physics:
-                                                        AppScrollPhysics.smooth,
-                                                    child: Center(
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets.all(
-                                                              32.0,
-                                                            ),
-                                                        child:
-                                                            EmptyStateWidgets.noEducationContent(
-                                                              context,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-
-                                                // 3) ساخت لیست lesson_order ها از 1 تا max (پر کردن gap ها)
-                                                final lessonOrdersToShow =
-                                                    List.generate(
-                                                      maxLessonOrderWithVideo,
-                                                      (i) => i + 1,
-                                                    );
-
-                                                // 4) رندر لیست با gap filling
-                                                return ListView.builder(
-                                                  physics:
-                                                      AppScrollPhysics.gentle,
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 16,
-                                                      ),
-                                                  itemCount:
-                                                      lessonOrdersToShow.length,
-                                                  itemBuilder: (ctx, i) {
-                                                    final lessonOrder =
-                                                        lessonOrdersToShow[i];
-
-                                                    // پیدا کردن lesson با این lessonOrder
-                                                    final lesson = _lessons!
-                                                        .firstWhere(
-                                                          (l) =>
-                                                              l.lessonOrder ==
-                                                              lessonOrder,
-                                                          orElse: () => Lesson(
-                                                            id: 0,
-                                                            chapterId: widget
-                                                                .chapter
-                                                                .id,
-                                                            lessonOrder:
-                                                                lessonOrder,
-                                                            title:
-                                                                'درس $lessonOrder',
-                                                            active: true,
-                                                          ),
-                                                        );
-
-                                                    final videos =
-                                                        _videosByLesson[lesson
-                                                            .id] ??
-                                                        const [];
-                                                    final filteredVideos = videos
-                                                        .where(
-                                                          (v) =>
-                                                              _getStyleName(
-                                                                v.style,
-                                                              ) ==
-                                                              _selectedStyle,
-                                                        )
-                                                        .toList();
-
-                                                    // اگر ویدیو نداره: کارت خالی
-                                                    if (filteredVideos
-                                                        .isEmpty) {
-                                                      return _buildEmptyLessonCard(
-                                                        lesson,
-                                                        theme,
-                                                        darkBlue,
-                                                      );
-                                                    }
-
-                                                    // اگر ویدیو داره: کارت معمولی
-                                                    return Container(
-                                                      margin:
-                                                          const EdgeInsets.symmetric(
-                                                            vertical: 16,
-                                                          ),
-                                                      child: Stack(
-                                                        clipBehavior: Clip.none,
-                                                        children: [
-                                                          Container(
-                                                            decoration: BoxDecoration(
-                                                              color:
-                                                                  Colors.white,
-                                                              border: Border.all(
-                                                                color: Colors
-                                                                    .green
-                                                                    .shade300,
-                                                                width: 2,
-                                                              ),
-                                                              borderRadius:
-                                                                  BorderRadius.circular(
-                                                                    12,
-                                                                  ),
-                                                              boxShadow: [
-                                                                BoxShadow(
-                                                                  color: Colors
-                                                                      .black
-                                                                      .withValues(
-                                                                        alpha:
-                                                                            0.15,
-                                                                      ),
-                                                                  blurRadius:
-                                                                      12,
-                                                                  offset:
-                                                                      const Offset(
-                                                                        0,
-                                                                        6,
+                                      : _buildVideosList(context, theme, darkBlue),
                                                                       ),
                                                                 ),
                                                               ],
                                                             ),
-                                                            padding:
-                                                                const EdgeInsets.fromLTRB(
-                                                                  8,
-                                                                  16,
-                                                                  8,
-                                                                  8,
-                                                                ),
-                                                            child: Column(
-                                                              crossAxisAlignment:
-                                                                  CrossAxisAlignment
-                                                                      .start,
-                                                              children: [
-                                                                const SizedBox(
-                                                                  height: 32,
-                                                                ),
-                                                                ...List.generate(
-                                                                  filteredVideos
-                                                                      .length,
-                                                                  (
-                                                                    videoIndex,
-                                                                  ) => _buildVideoCard(
-                                                                    filteredVideos[videoIndex],
-                                                                    theme,
-                                                                    darkBlue,
-                                                                    videoIndex +
-                                                                        1,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                          Positioned(
-                                                            right: 20,
-                                                            top: -20,
-                                                            child: Container(
-                                                              padding:
-                                                                  const EdgeInsets.symmetric(
-                                                                    horizontal:
-                                                                        8,
-                                                                    vertical: 2,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color: Theme.of(
-                                                                  context,
-                                                                ).colorScheme.surface,
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      4,
-                                                                    ),
-                                                              ),
-                                                              child: Text(
-                                                                'پله ${_convertToPersian(lesson.lessonOrder)}',
-                                                                style: theme.textTheme.bodySmall?.copyWith(
-                                                                  color:
-                                                                      darkBlue,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  fontSize:
-                                                                      ((theme.textTheme.bodySmall?.fontSize ??
-                                                                                  12) *
-                                                                              2.2)
-                                                                          .clamp(
-                                                                            18,
-                                                                            28,
-                                                                          ),
-                                                                  fontFamily:
-                                                                      'IRANSansXFaNum',
-                                                                ),
-                                                                textAlign:
-                                                                    TextAlign
-                                                                        .left,
-                                                                softWrap: false,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .fade,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    );
-                                                  },
-                                                );
-                                              },
-                                            ),
-                                    ),
-                            ),
-                          ],
-                        ),
                 ),
               ),
             ),
@@ -560,23 +297,137 @@ class _ChapterScreenState extends State<ChapterScreen> {
     );
   }
 
-  Widget _buildVideoCard(
-    LessonVideo video,
-    ThemeData theme,
-    Color darkBlue,
-    int rowNumber,
-  ) {
-    final lesson = _lessons!.firstWhere(
-      (l) => l.id == video.lessonId,
-      orElse: () => Lesson(
-        id: video.lessonId,
-        chapterId: 0,
-        lessonOrder: 0,
-        title: 'عنوان درس',
-        active: true,
-      ),
+  // متد برای ساخت لیست ویدیوها با گروه‌بندی پله‌ها (با gap filling)
+  Widget _buildVideosList(BuildContext context, ThemeData theme, Color darkBlue) {
+    // 1) یافتن بالاترین lesson_order که ویدیو برای style انتخابی دارد
+    int maxLessonOrderWithVideo = 0;
+    final Map<int, List<LessonVideo>> videosByLessonOrder = {};
+    
+    for (final video in _allVideos) {
+      if (_getStyleName(video.style) == _selectedStyle) {
+        final order = video.lessonOrder;
+        videosByLessonOrder.putIfAbsent(order, () => []).add(video);
+        if (order > maxLessonOrderWithVideo) {
+          maxLessonOrderWithVideo = order;
+        }
+      }
+    }
+
+    // 2) اگر هیچ ویدیویی برای این سبک نیست: فقط یک EmptyState
+    if (maxLessonOrderWithVideo == 0) {
+      return SingleChildScrollView(
+        physics: AppScrollPhysics.smooth,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: EmptyStateWidgets.noEducationContent(context),
+          ),
+        ),
+      );
+    }
+
+    // 3) ساخت لیست lesson_order ها از 1 تا max (پر کردن gap ها)
+    final lessonOrdersToShow = List.generate(
+      maxLessonOrderWithVideo,
+      (i) => i + 1,
     );
 
+    // 4) رندر لیست با gap filling
+    return ListView.builder(
+      physics: AppScrollPhysics.gentle,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: lessonOrdersToShow.length,
+      itemBuilder: (ctx, i) {
+        final lessonOrder = lessonOrdersToShow[i];
+        final videos = videosByLessonOrder[lessonOrder] ?? [];
+        final filteredVideos = videos
+            .where((v) => _getStyleName(v.style) == _selectedStyle)
+            .toList();
+
+        // اگر ویدیو نداره: کارت خالی
+        if (filteredVideos.isEmpty) {
+          return _buildEmptyLessonCard(lessonOrder, theme, darkBlue);
+        }
+
+        // اگر ویدیو داره: کارت معمولی با برچسب پله
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 16),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(
+                    color: Colors.green.shade300,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 32),
+                    ...List.generate(
+                      filteredVideos.length,
+                      (videoIndex) => _buildVideoCard(
+                        video: filteredVideos[videoIndex],
+                        theme: theme,
+                        darkBlue: darkBlue,
+                        rowNumber: videoIndex + 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: 20,
+                top: -20,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'پله ${_convertToPersian(lessonOrder)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: darkBlue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: ((theme.textTheme.bodySmall?.fontSize ?? 12) * 2.2)
+                          .clamp(18, 28),
+                      fontFamily: 'IRANSansXFaNum',
+                    ),
+                    textAlign: TextAlign.left,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVideoCard({
+    required LessonVideo video,
+    required ThemeData theme,
+    required Color darkBlue,
+    required int rowNumber,
+  }) {
     return GestureDetector(
       onTap: () {
         if (video.embedHtml != null && video.embedHtml!.isNotEmpty) {
@@ -642,15 +493,15 @@ class _ChapterScreenState extends State<ChapterScreen> {
                     // عنوان درس - وسط بالا
                     Flexible(
                       child: Text(
-                        _convertNumbersToPersian(lesson.title),
+                        _convertNumbersToPersian(video.lessonTitle),  // ← استفاده مستقیم از video.lessonTitle
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: Theme.of(context).colorScheme.onSurface,
                           fontFamily: 'IRANSansXFaNum',
-                          fontSize: 13, // کاهش اندازه فونت
+                          fontSize: 13,
                         ),
                         overflow: TextOverflow.ellipsis,
-                        maxLines: 1, // تغییر از 2 به 1
+                        maxLines: 1,
                       ),
                     ),
                     const SizedBox(height: 2), // کاهش فاصله از 4 به 2
@@ -740,7 +591,8 @@ class _ChapterScreenState extends State<ChapterScreen> {
     );
   }
 
-  Widget _buildEmptyLessonCard(Lesson lesson, ThemeData theme, Color darkBlue) {
+  // کارت خالی برای پله‌های بدون ویدیو
+  Widget _buildEmptyLessonCard(int lessonOrder, ThemeData theme, Color darkBlue) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
       child: Stack(
@@ -801,7 +653,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                'پله ${_convertToPersian(lesson.lessonOrder)}',
+                'پله ${_convertToPersian(lessonOrder)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: darkBlue,
                   fontWeight: FontWeight.bold,
@@ -871,19 +723,6 @@ class _ChapterScreenState extends State<ChapterScreen> {
 
   /// نمایش پاپ‌آپ جزئیات ویدیو (بدون WebView)
   void _openVideoPopup(LessonVideo video) {
-    // پیدا کردن درس مربوطه
-    final lesson = _lessons?.firstWhere(
-      (l) => l.id == video.lessonId,
-      orElse: () => Lesson(
-        id: video.lessonId,
-        chapterId: 0,
-        lessonOrder: 0,
-        title: 'عنوان درس',
-        active: true,
-      ),
-    );
-
-    // نام استاد
     final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
 
     showDialog(
@@ -903,16 +742,23 @@ class _ChapterScreenState extends State<ChapterScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _kv('شناسه ویدیو', video.id.toString()),
-                  _kv('درس', lesson?.title ?? '-'),
+                  _kv('درس', video.lessonTitle),  // ← استفاده مستقیم از video.lessonTitle
                   _kv('استاد', teacherName),
                   _kv('نوع محتوا', _getStyleName(video.style)),
                   _kv('وضعیت محتوا', video.contentStatus),
-                  _kv('لینک آپارات', video.aparatUrl.isNotEmpty ? video.aparatUrl : '-'),
+                  _kv(
+                    'لینک آپارات',
+                    video.aparatUrl.isNotEmpty ? video.aparatUrl : '-',
+                  ),
                   _kv('مدت زمان', _formatDuration(video.durationSec)),
-                  _kv('تگ‌ها', video.tags.isNotEmpty ? video.tags.join(', ') : '-'),
+                  _kv(
+                    'تگ‌ها',
+                    video.tags.isNotEmpty ? video.tags.join(', ') : '-',
+                  ),
                   if (video.notePdfUrl != null && video.notePdfUrl!.isNotEmpty)
                     _kv('لینک PDF جزوه', video.notePdfUrl!),
-                  if (video.exercisePdfUrl != null && video.exercisePdfUrl!.isNotEmpty)
+                  if (video.exercisePdfUrl != null &&
+                      video.exercisePdfUrl!.isNotEmpty)
                     _kv('لینک PDF نمونه سوال', video.exercisePdfUrl!),
                 ],
               ),

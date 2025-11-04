@@ -50,7 +50,7 @@ serve(async (req) => {
     // Check if lesson_video exists
     const { data: existingVideo, error: checkError } = await supabase
       .from('lesson_videos')
-      .select('id, teacher_id, lesson_id')
+      .select('id, teacher_id, chapter_id')
       .eq('id', input.lesson_video_id)
       .single();
 
@@ -107,6 +107,11 @@ serve(async (req) => {
       .eq('id', input.lesson_video_id)
       .select(`
         id,
+        chapter_id,
+        chapter_order,
+        chapter_title,
+        lesson_order,
+        lesson_title,
         aparat_url,
         duration_sec,
         tags,
@@ -115,19 +120,11 @@ serve(async (req) => {
         content_status,
         style,
         view_count,
-        teachers!inner(name),
-        lessons!inner(
-          title,
-          chapters!inner(
-            title,
-            chapter_order,
-            subject_offers!inner(
-              subjects!inner(name, slug),
-              grades!inner(name),
-              tracks(name)
-            )
-          )
-        )
+        embed_html,
+        allow_landscape,
+        note_pdf_url,
+        exercise_pdf_url,
+        teachers!inner(name)
       `)
       .single();
 

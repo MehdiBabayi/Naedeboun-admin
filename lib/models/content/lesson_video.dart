@@ -1,6 +1,10 @@
 class LessonVideo {
   final int id;
-  final int lessonId;
+  final int chapterId;  // ← جدید
+  final int chapterOrder;  // ← جدید
+  final String chapterTitle;  // ← جدید
+  final int lessonOrder;  // ← جدید
+  final String lessonTitle;  // ← جدید
   final int teacherId;
   final String style;
   final String aparatUrl;
@@ -16,7 +20,11 @@ class LessonVideo {
 
   LessonVideo({
     required this.id,
-    required this.lessonId,
+    required this.chapterId,
+    required this.chapterOrder,
+    required this.chapterTitle,
+    required this.lessonOrder,
+    required this.lessonTitle,
     required this.teacherId,
     required this.style,
     required this.aparatUrl,
@@ -34,7 +42,11 @@ class LessonVideo {
   factory LessonVideo.fromJson(Map<String, dynamic> json) {
     return LessonVideo(
       id: json['id'] as int,
-      lessonId: json['lesson_id'] as int,
+      chapterId: json['chapter_id'] as int,
+      chapterOrder: json['chapter_order'] as int,
+      chapterTitle: json['chapter_title'] as String,
+      lessonOrder: json['lesson_order'] as int,
+      lessonTitle: json['lesson_title'] as String,
       teacherId: json['teacher_id'] as int,
       style: json['style'] as String,
       aparatUrl: json['aparat_url'] as String,
@@ -55,7 +67,11 @@ class LessonVideo {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'lesson_id': lessonId,
+      'chapter_id': chapterId,
+      'chapter_order': chapterOrder,
+      'chapter_title': chapterTitle,
+      'lesson_order': lessonOrder,
+      'lesson_title': lessonTitle,
       'teacher_id': teacherId,
       'style': style,
       'aparat_url': aparatUrl,

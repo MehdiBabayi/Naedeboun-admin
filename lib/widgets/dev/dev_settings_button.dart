@@ -506,19 +506,14 @@ class _DevSettingsDialogState extends State<DevSettingsDialog> {
           gradeId: grade,
           trackId: track,
         );
+        // ✅ تغییر: حذف حلقه lessons، مستقیماً از chapters استفاده می‌کنیم
         for (final ch in chapters) {
-          final lessons = await CachedContentService.getLessons(
-            ch.id,
+          // ✅ تغییر: مستقیماً getLessonVideos را صدا می‌زنیم
+          await CachedContentService.getLessonVideos(
+            ch.id,  // ← تغییر از lesson.id به chapter.id
             gradeId: grade,
             trackId: track,
           );
-          for (final les in lessons) {
-            await CachedContentService.getLessonVideos(
-              les.id,
-              gradeId: grade,
-              trackId: track,
-            );
-          }
         }
       }
 

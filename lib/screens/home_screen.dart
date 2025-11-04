@@ -2,18 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/core/app_state_manager.dart';
-import 'package:nardeboun/services/content/cached_content_service.dart';
+import 'package:nardeboun/services/content/content_service.dart';
 import 'package:nardeboun/models/content/subject.dart';
 import 'package:nardeboun/utils/grade_utils.dart';
-import '../services/cache/cache_manager.dart';
 import 'dart:async';
 import '../widgets/bubble_nav_bar.dart';
 import '../services/session_service.dart';
-import '../models/auth/registration_stage.dart';
-import 'package:nardeboun/models/content/chapter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:nardeboun/services/mini_request/mini_request_service.dart';
-import 'package:nardeboun/services/image_cache/smart_image_cache_service.dart';
 import '../services/preload/preload_service.dart';
 import '../exceptions/error_handler.dart';
 import '../widgets/common/empty_state_widget.dart';
@@ -105,7 +100,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.read<AppStateManager>();
 
     Logger.debug('🔍 [HOME] Checking auth...');
-    Logger.debug('🔍 [HOME] isUserAuthenticated: ${appState.isUserAuthenticated}');
+    Logger.debug(
+      '🔍 [HOME] isUserAuthenticated: ${appState.isUserAuthenticated}',
+    );
 
     if (!appState.isUserAuthenticated) {
       Logger.debug('🔍 [HOME] User not authenticated -> redirecting to /auth');
@@ -115,7 +112,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Logger.debug('🔍 [HOME] Auth OK -> staying in Home');
   }
-
 
   /// شروع Preloading برای بهبود سرعت navigation
   void _startPreloading() {
@@ -184,48 +180,28 @@ class _HomeScreenState extends State<HomeScreen> {
       final gradeId = profile?.grade ?? 7;
       final int? trackId = null;
 
-      // 1) ابتدا از کش بخوان (سریع‌تر)
-      try {
-        final cachedSubjects = await CachedContentService.getSubjectsForUser(
-          gradeId: gradeId,
-          trackId: trackId,
-        );
-        if (cachedSubjects.isNotEmpty && mounted) {
-          setState(() {
-            _subjects = cachedSubjects;
-            _showEmptyState =
-                false; // اگر محتوا پیدا شد، empty state را مخفی کن
-          });
-          _emptyStateTimer?.cancel(); // تایمر را لغو کن
-          Logger.debug('🚀 [HOME] Subjects loaded from cache');
-          // پس‌از نمایش، حافظه فلاتر را نیز warmup کن
-          // در پس‌زمینه تا UI بلاک نشود
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            try {
-              await SmartImageCacheService.instance.precacheBookCovers(
-                context,
-                cachedSubjects,
-              );
-            } catch (e) {
-              Logger.error('⚠️ [HOME] Precache covers error', e);
-            }
-          });
-          return; // از کش لود شد، دیگر نیازی به RPC نیست
-        }
-      } catch (e) {
-        Logger.error('⚠️ [HOME] Cache read error', e);
-      }
+      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
+      final contentService = ContentService(Supabase.instance.client);
+      final subjects = await contentService.getSubjectsForUser(
+        gradeId: gradeId,
+        trackId: trackId,
+      );
 
-      // 3) اگر هنوز محتوا خالی است، تایمر 2 ثانیه را شروع کن
-      if (_subjects.isEmpty && mounted) {
+      if (!mounted) return;
+      setState(() {
+        _subjects = subjects;
+        _showEmptyState = subjects.isEmpty;
+      });
+      
+      if (subjects.isEmpty && mounted) {
         _startEmptyStateTimer();
+      } else {
+        _emptyStateTimer?.cancel();
       }
-
-      // 4) Mini-Request فقط در صورت نیاز (نه در هر navigation)
-      // Mini-Request در AppStateManager مدیریت می‌شود
+      
+      Logger.debug('✅ [HOME] Subjects loaded from Supabase: ${subjects.length}');
     } catch (e) {
-      debugPrint('❌ Error loading subjects quickly: $e');
-      // در صورت خطا هم تایمر را شروع کن
+      Logger.error('❌ [HOME] Error loading subjects', e);
       if (mounted) {
         _startEmptyStateTimer();
       }
@@ -242,7 +218,9 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _showEmptyState = true;
         });
-        Logger.debug('⏰ [HOME] Empty state timer triggered - showing empty widget');
+        Logger.debug(
+          '⏰ [HOME] Empty state timer triggered - showing empty widget',
+        );
       }
     });
     Logger.debug('⏰ [HOME] Empty state timer started (2 seconds)');
@@ -267,7 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final itr = text.runes.take(maxChars);
     return '${String.fromCharCodes(itr)}…';
   }
-
 
   void _updateUserGrade(String selectedGrade) async {
     // اول چک کن آیا مجاز هست یا نه
@@ -334,37 +311,14 @@ class _HomeScreenState extends State<HomeScreen> {
       await appState.authService.updateProfile(updates);
       if (!mounted) return;
 
-      // پاک کردن تمام cache های مربوط به پایه قبلی
-      AppCacheManager.clearCache(null);
+      // ✅ تغییر: دیگر cache وجود ندارد، مستقیماً از Supabase استفاده می‌کنیم
 
       // پاک کردن subjects برای force reload
       setState(() {
         _subjects = [];
       });
 
-      // 🚀 فراخوانی Mini-Request با force=true برای پایه جدید
-      try {
-        if (gradeInt != null) {
-          await MiniRequestService.instance.checkForUpdates(
-            gradeId: gradeInt,
-            trackId: null,
-            force: true,
-          );
-
-          // 🚀 بعد از Mini-Request، book covers را prefetch کن
-          Logger.info(
-            '🚀 [HOME] Prefetching book covers after grade change...',
-          );
-          await MiniRequestService.instance.prefetchBookCoversForGrade(
-            gradeInt,
-          );
-          Logger.info('✅ [HOME] Book covers prefetch completed');
-        } else {
-          Logger.info('⚠️ [HOME] Cannot prefetch - gradeInt is null');
-        }
-      } catch (e) {
-        Logger.error('❌ Mini-Request failed during grade change', e);
-      }
+      // ✅ تغییر: Mini-Request حذف شد، مستقیماً از Supabase استفاده می‌کنیم
 
       // بارگذاری مجدد محتوا
       await _loadSubjects();
@@ -545,7 +499,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -833,14 +786,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.2),
                     ),
                   ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.of(context).pushNamed('/video-upload'),
+                      onTap: () =>
+                          Navigator.of(context).pushNamed('/video-upload'),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -877,7 +833,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
 
   Widget _buildSubjectsGrid(BuildContext context) {
     // اگر در حال لودینگ است، loading indicator نمایش بده

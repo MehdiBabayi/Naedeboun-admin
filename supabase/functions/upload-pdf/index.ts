@@ -27,7 +27,7 @@ serve(async (req) => {
     const formData = await req.formData();
     const file = formData.get('file');
     const type = String(formData.get('type') || 'note'); // 'note' | 'exercise'
-    const lessonId = String(formData.get('lesson_id') || 'unknown');
+    const chapterId = String(formData.get('chapter_id') || 'unknown'); // Changed from lesson_id to chapter_id
     const videoId = String(formData.get('video_id') || 'unknown');
 
     if (!(file instanceof File)) {
@@ -36,7 +36,7 @@ serve(async (req) => {
 
     const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
     const folder = type === 'exercise' ? 'exercises' : 'notes';
-    const objectPath = `pdfs/${folder}/${lessonId}/${videoId}/${Date.now()}.${ext}`;
+    const objectPath = `pdfs/${folder}/${chapterId}/${videoId}/${Date.now()}.${ext}`;
 
     const { data, error } = await supabase.storage.from('pdfs').upload(objectPath, await file.arrayBuffer(), {
       contentType: file.type || 'application/pdf',

@@ -153,28 +153,14 @@ serve(async (req) => {
     const chapterIds = (chapters || []).map((c: any) => c.id);
     console.log(`📖 [BACKEND] Found ${chapterIds.length} chapters`);
 
-    // Step 3: Get lesson_ids for these chapters
-    const { data: lessons, error: lessonsError } = await supabase
-      .from('lessons')
-      .select('id')
-      .in('chapter_id', chapterIds);
-
-    if (lessonsError) {
-      console.error('Error fetching lessons:', lessonsError);
-      throw lessonsError;
-    }
-
-    const lessonIds = (lessons || []).map((l: any) => l.id);
-    console.log(`📝 [BACKEND] Found ${lessonIds.length} lessons`);
-
-    // Step 4: Count lesson videos
+    // Step 3: Count lesson videos directly from chapters (lessons table removed)
     let videosCount = 0;
-    if (lessonIds.length > 0) {
+    if (chapterIds.length > 0) {
       const { count, error: videosError } = await supabase
         .from('lesson_videos')
         .select('*', { count: 'exact', head: true })
         .eq('active', true)
-        .in('lesson_id', lessonIds);
+        .in('chapter_id', chapterIds);
 
       if (videosError) {
         console.error('Error counting videos:', videosError);
@@ -182,6 +168,29 @@ serve(async (req) => {
       }
 
       videosCount = count ?? 0;
+    }
+
+    // Count distinct lessons (using lesson_title and lesson_order combination)
+    let lessonsCount = 0;
+    if (chapterIds.length > 0) {
+      const { data: distinctLessons, error: lessonsError } = await supabase
+        .from('lesson_videos')
+        .select('chapter_id, lesson_order, lesson_title')
+        .eq('active', true)
+        .in('chapter_id', chapterIds);
+
+      if (lessonsError) {
+        console.error('Error counting distinct lessons:', lessonsError);
+        throw lessonsError;
+      }
+
+      // Count unique combinations of (chapter_id, lesson_order, lesson_title)
+      const uniqueLessons = new Set<string>();
+      (distinctLessons || []).forEach((lesson: any) => {
+        const key = `${lesson.chapter_id}_${lesson.lesson_order}_${lesson.lesson_title}`;
+        uniqueLessons.add(key);
+      });
+      lessonsCount = uniqueLessons.size;
     }
 
     // Step 5: Count step-by-step PDFs
@@ -214,7 +223,7 @@ serve(async (req) => {
       provincial_sample_pdfs_count: provincialCount ?? 0,
       chapters_count: chapterIds.length,
       subjects_count: subjectOfferIds.length,
-      lessons_count: lessonIds.length,
+      lessons_count: lessonsCount,
     };
 
     // Update content_counts table

@@ -9,8 +9,6 @@ import '../../models/content/step_by_step_pdf.dart';
 import '../../models/content/provincial_sample_pdf.dart';
 import '../../models/content/subject.dart';
 import '../../models/content/chapter.dart';
-import '../../models/content/lesson.dart';
-import '../../models/content/lesson_video.dart';
 // import '../../models/content/book_cover.dart';
 import '../content/book_cover_service.dart';
 import '../content/content_service.dart';
@@ -231,8 +229,7 @@ class MiniRequestService {
         // Load chapters metadata (برای تمام subjects)
         await _loadChaptersMetadata(grade, track);
 
-        // Load lessons metadata (برای تمام chapters)
-        await _loadLessonsMetadata(grade, track);
+        // ✅ حذف شد: await _loadLessonsMetadata(grade, track);
 
         // Load videos metadata (برای تمام lessons)
         await _loadVideosMetadata(grade, track);
@@ -263,8 +260,7 @@ class MiniRequestService {
         // Load chapters metadata (برای تمام subjects)
         await _loadChaptersMetadata(grade, track);
 
-        // Load lessons metadata (برای تمام chapters)
-        await _loadLessonsMetadata(grade, track);
+        // ✅ حذف شد: await _loadLessonsMetadata(grade, track);
 
         // Load videos metadata (برای تمام lessons)
         await _loadVideosMetadata(grade, track);
@@ -640,163 +636,58 @@ class MiniRequestService {
     }
   }
 
-  /// دریافت و کش کردن lessons (metadata) برای تمام chapters
-  Future<void> _loadLessonsMetadata(int grade, int? track) async {
-    try {
-      Logger.info(
-        '📝 [MINI-REQUEST] Loading lessons metadata: grade=$grade track=$track',
-      );
-
-      // ابتدا chapters را از Hive بخوان
-      final boxName = _getBoxName(grade, track);
-      final box = await Hive.openBox(boxName);
-      final chaptersJson = box.get('chapters');
-
-      if (chaptersJson == null) {
-        Logger.info('⚠️ [MINI-REQUEST] No chapters found, cannot load lessons');
-        return;
-      }
-
-      final Map<String, dynamic> allChapters = jsonDecode(chaptersJson);
-      if (allChapters.isEmpty) {
-        Logger.info('⚠️ [MINI-REQUEST] Chapters map is empty, skipping lessons');
-        return;
-      }
-
-      // برای هر chapter، lessons را دانلود کن
-      final Map<String, List<dynamic>> lessonsByChapter = {};
-
-      // تمام chapters را از همه subjectOfferId ها جمع کن
-      final List<Chapter> allChaptersList = [];
-      for (final chaptersList in allChapters.values) {
-        if (chaptersList is List) {
-          for (final chapterData in chaptersList) {
-            if (chapterData is Map<String, dynamic>) {
-              allChaptersList.add(Chapter.fromJson(chapterData));
-            }
-          }
-        }
-      }
-
-      Logger.debug(
-        '📝 [MINI-REQUEST] Found ${allChaptersList.length} chapters to load lessons for',
-      );
-
-      for (final chapter in allChaptersList) {
-        try {
-          // Query lessons برای این chapter
-          final lessonsData =
-              await _supabase
-                      .from('lessons')
-                      .select()
-                      .eq('chapter_id', chapter.id)
-                      .eq('active', true)
-                      .order('lesson_order', ascending: true)
-                  as List<dynamic>;
-
-          final lessons = lessonsData
-              .map((j) => Lesson.fromJson(j as Map<String, dynamic>))
-              .toList();
-
-          lessonsByChapter[chapter.id.toString()] = lessons
-              .map((l) => l.toJson())
-              .toList();
-        } catch (e) {
-          Logger.error(
-            '❌ [MINI-REQUEST] Error loading lessons for chapter ${chapter.id}',
-            e,
-          );
-        }
-      }
-
-      // ذخیره lessons در Hive به صورت Map: {chapterId: [lessons]}
-      await box.put('lessons', jsonEncode(lessonsByChapter));
-
-      // final totalLessons = lessonsByChapter.values.fold(
-      //   0,
-      //   (sum, list) => sum + list.length,
-      // );
-    } catch (e) {
-      Logger.error('❌ [MINI-REQUEST] Error loading lessons metadata', e);
-    }
-  }
-
-  /// دریافت و کش کردن videos (metadata) برای تمام lessons
+  /// دریافت و کش کردن videos (metadata) برای تمام chapters
   Future<void> _loadVideosMetadata(int grade, int? track) async {
     try {
-      Logger.info(
-        '🎥 [MINI-REQUEST] Loading videos metadata: grade=$grade track=$track',
-      );
-
-      // ابتدا lessons را از Hive بخوان
+      Logger.info('🎥 [MINI-REQUEST] Loading videos metadata: grade=$grade track=$track');
+      
+      // ✅ تغییر: دریافت chapters از Hive (به جای lessons)
       final boxName = _getBoxName(grade, track);
       final box = await Hive.openBox(boxName);
-      final lessonsJson = box.get('lessons');
-
-      if (lessonsJson == null) {
-        Logger.info('⚠️ [MINI-REQUEST] No lessons found, cannot load videos');
+      final chaptersJson = box.get('chapters');  // ← تغییر از 'lessons' به 'chapters'
+      
+      if (chaptersJson == null) {
+        Logger.info('⚠️ [MINI-REQUEST] No chapters found, cannot load videos');
         return;
       }
-
-      final Map<String, dynamic> allLessons = jsonDecode(lessonsJson);
-      if (allLessons.isEmpty) {
-        Logger.info('⚠️ [MINI-REQUEST] Lessons map is empty, skipping videos');
+      
+      final Map<String, dynamic> allChapters = jsonDecode(chaptersJson);  // ← تغییر از allLessons
+      if (allChapters.isEmpty) {
+        Logger.info('⚠️ [MINI-REQUEST] Chapters map is empty, skipping videos');
         return;
       }
-
-      // برای هر lesson، videos را دانلود کن
-      final Map<String, List<dynamic>> videosByLesson = {};
-
-      // تمام lessons را از همه chapters جمع کن
-      final List<Lesson> allLessonsList = [];
-      for (final lessonsList in allLessons.values) {
-        if (lessonsList is List) {
-          for (final lessonData in lessonsList) {
-            if (lessonData is Map<String, dynamic>) {
-              allLessonsList.add(Lesson.fromJson(lessonData));
-            }
-          }
-        }
-      }
-
-      Logger.debug(
-        '🎥 [MINI-REQUEST] Found ${allLessonsList.length} lessons to load videos for',
-      );
-
-      for (final lesson in allLessonsList) {
+      
+      // ✅ تغییر: برای هر chapter، videos را دانلود کن (به جای lesson)
+      final Map<String, List<dynamic>> videosByChapter = {};  // ← تغییر از videosByLesson
+      
+      // تمام chapters را از همه subject_offers جمع کن (ساده‌تر با expand)
+      final allChaptersList = allChapters.values
+          .expand((chaptersList) => chaptersList is List ? chaptersList : [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      
+      Logger.debug('🎥 [MINI-REQUEST] Found ${allChaptersList.length} chapters to load videos for');
+      
+      for (final chapter in allChaptersList) {
         try {
-          // Query videos برای این lesson
-          final videosData =
-              await _supabase
-                      .from('lesson_videos')
-                      .select()
-                      .eq('lesson_id', lesson.id)
-                      .eq('active', true)
-                      .order('style', ascending: true)
-                  as List<dynamic>;
-
-          final videos = videosData
-              .map((j) => LessonVideo.fromJson(j as Map<String, dynamic>))
-              .toList();
-
-          videosByLesson[lesson.id.toString()] = videos
-              .map((v) => v.toJson())
-              .toList();
+          // ✅ تغییر: Query videos برای این chapter (به جای lesson)
+          final videosData = await _supabase
+              .from('lesson_videos')
+              .select()
+              .eq('chapter_id', chapter['id'])  // ← تغییر از lesson_id به chapter_id
+              .eq('active', true)
+              .order('lesson_order', ascending: true)
+              .order('style', ascending: true)
+              as List<dynamic>;
+          
+          videosByChapter[chapter['id'].toString()] = videosData;  // ← تغییر از lessonId
         } catch (e) {
-          Logger.error(
-            '❌ [MINI-REQUEST] Error loading videos for lesson ${lesson.id}',
-            e,
-          );
+          Logger.error('❌ [MINI-REQUEST] Error loading videos for chapter ${chapter['id']}', e);
         }
       }
-
-      // ذخیره videos در Hive به صورت Map: {lessonId: [videos]}
-      await box.put('videos', jsonEncode(videosByLesson));
-
-      // final totalVideos = videosByLesson.values.fold(
-      //   0,
-      //   (sum, list) => sum + list.length,
-      // );
+      
+      // ✅ تغییر: ذخیره videos در Hive به صورت Map: {chapterId: [videos]}
+      await box.put('videos', jsonEncode(videosByChapter));
     } catch (e) {
       Logger.error('❌ [MINI-REQUEST] Error loading videos metadata', e);
     }

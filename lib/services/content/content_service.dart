@@ -1,7 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nardeboun/models/content/subject.dart';
 import 'package:nardeboun/models/content/chapter.dart';
-import 'package:nardeboun/models/content/lesson.dart';
 import 'package:nardeboun/models/content/lesson_video.dart';
 import 'package:nardeboun/utils/grade_utils.dart';
 import '../../utils/logger.dart';
@@ -142,28 +141,15 @@ class ContentService {
     return (rows.first as Map<String, dynamic>)['id'] as int;
   }
 
-  Future<List<Lesson>> getLessons(int chapterId) async {
-    final data =
-        await supabase
-                .from('lessons')
-                .select()
-                .eq('chapter_id', chapterId)
-                .order('lesson_order', ascending: true)
-            as List<dynamic>;
-    return data.map((j) => Lesson.fromJson(j as Map<String, dynamic>)).toList();
-  }
-
-  Future<List<LessonVideo>> getLessonVideos(int lessonId) async {
-    final data =
-        await supabase
-                .from('lesson_videos')
-                .select()
-                .eq('lesson_id', lessonId)
-                .eq('active', true)
-                .order('style', ascending: true)
-            as List<dynamic>;
-    return data
-        .map((j) => LessonVideo.fromJson(j as Map<String, dynamic>))
-        .toList();
+  Future<List<LessonVideo>> getLessonVideos(int chapterId) async {  // ← تغییر از lessonId
+    final data = await supabase
+        .from('lesson_videos')
+        .select()
+        .eq('chapter_id', chapterId)  // ← تغییر از lesson_id
+        .eq('active', true)
+        .order('lesson_order', ascending: true)
+        .order('style', ascending: true);
+    
+    return data.map((j) => LessonVideo.fromJson(j as Map<String, dynamic>)).toList();
   }
 }
