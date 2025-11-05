@@ -33,8 +33,9 @@ class StepByStepUploadFormData {
     if (grade == null || grade!.isEmpty) return 'پایه را انتخاب کنید';
     if (subject == null || subject!.isEmpty) return 'درس را انتخاب کنید';
     if (title == null || title!.trim().isEmpty) return 'عنوان را وارد کنید';
-    if (pdfUrl == null || pdfUrl!.trim().isEmpty)
+    if (pdfUrl == null || pdfUrl!.trim().isEmpty) {
       return 'لینک PDF را وارد کنید';
+    }
 
     // بررسی فرمت URL
     if (!pdfUrl!.startsWith('http://') && !pdfUrl!.startsWith('https://')) {
