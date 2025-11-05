@@ -54,11 +54,14 @@ class _AuthScreenState extends State<AuthScreen> {
       final formattedPhone = _formatPhoneNumber(_phoneController.text);
       await authService.sendOtp(formattedPhone);
 
+      // فقط در صورت موفقیت به صفحه verify می‌رویم
       if (!mounted) return;
       Navigator.pushNamed(context, '/verify-otp', arguments: formattedPhone);
     } on AuthServiceException catch (e) {
+      // اگر خطا بیاید (مثل non-admin)، به صفحه verify نمی‌رویم
       if (!mounted) return;
       ErrorHandler.show(context, e.message);
+      return; // مطمئن می‌شویم که navigation انجام نمی‌شود
     } catch (e) {
       if (!mounted) return;
       ErrorHandler.show(context, 'خطای نامشخصی رخ داد');

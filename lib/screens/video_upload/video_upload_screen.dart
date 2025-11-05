@@ -17,6 +17,69 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   final _service = VideoUploadService();
   bool _submitting = false;
 
+  // Controllers برای حفظ مقادیر فیلدها هنگام scroll
+  late final TextEditingController _chapterTitleController = TextEditingController();
+  late final TextEditingController _chapterOrderController = TextEditingController();
+  late final TextEditingController _lessonTitleController = TextEditingController();
+  late final TextEditingController _lessonOrderController = TextEditingController();
+  late final TextEditingController _teacherNameController = TextEditingController();
+  late final TextEditingController _tagsController = TextEditingController();
+  late final TextEditingController _embedHtmlController = TextEditingController();
+  late final TextEditingController _notePdfUrlController = TextEditingController();
+  late final TextEditingController _exercisePdfUrlController = TextEditingController();
+  late final TextEditingController _durationHoursController = TextEditingController();
+  late final TextEditingController _durationMinutesController = TextEditingController();
+  late final TextEditingController _durationSecondsController = TextEditingController();
+
+  // Keys ثابت برای حفظ identity TextFormField ها هنگام rebuild
+  final _chapterTitleKey = GlobalKey();
+  final _chapterOrderKey = GlobalKey();
+  final _lessonTitleKey = GlobalKey();
+  final _lessonOrderKey = GlobalKey();
+  final _teacherNameKey = GlobalKey();
+  final _tagsKey = GlobalKey();
+  final _embedHtmlKey = GlobalKey();
+  final _notePdfUrlKey = GlobalKey();
+  final _exercisePdfUrlKey = GlobalKey();
+  final _durationHoursKey = GlobalKey();
+  final _durationMinutesKey = GlobalKey();
+  final _durationSecondsKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // تنظیم مقادیر اولیه از _form
+    _chapterTitleController.text = _form.chapterTitle ?? '';
+    _chapterOrderController.text = _form.chapterOrder?.toString() ?? '';
+    _lessonTitleController.text = _form.lessonTitle ?? '';
+    _lessonOrderController.text = _form.lessonOrder?.toString() ?? '';
+    _teacherNameController.text = _form.teacherName ?? '';
+    _tagsController.text = _form.tags ?? '';
+    _embedHtmlController.text = _form.embedHtml ?? '';
+    _notePdfUrlController.text = _form.notePdfUrl ?? '';
+    _exercisePdfUrlController.text = _form.exercisePdfUrl ?? '';
+    _durationHoursController.text = _form.durationHours?.toString() ?? '';
+    _durationMinutesController.text = _form.durationMinutes?.toString() ?? '';
+    _durationSecondsController.text = _form.durationSeconds?.toString() ?? '';
+  }
+
+  @override
+  void dispose() {
+    _chapterTitleController.dispose();
+    _chapterOrderController.dispose();
+    _lessonTitleController.dispose();
+    _lessonOrderController.dispose();
+    _teacherNameController.dispose();
+    _tagsController.dispose();
+    _embedHtmlController.dispose();
+    _notePdfUrlController.dispose();
+    _exercisePdfUrlController.dispose();
+    _durationHoursController.dispose();
+    _durationMinutesController.dispose();
+    _durationSecondsController.dispose();
+    super.dispose();
+  }
+
   // داده‌های Dropdown مطابق PHP
   final Map<String, List<String>> _gradesData = const {
     'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
@@ -93,6 +156,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            cacheExtent: 1000, // افزایش cache برای حفظ widget ها هنگام scroll
             children: [
               // 1) شاخه
               _buildDropdown<String>(
@@ -154,12 +218,22 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
               // 6) عنوان فصل
               _buildTextField(
                 label: 'عنوان فصل',
+                controller: _chapterTitleController,
+                fieldKey: _chapterTitleKey,
                 onSaved: (v) => _form.chapterTitle = v,
+                onChanged: (v) {
+                  _form.chapterTitle = v;
+                },
                 hint: 'مثال: فصل اول - اعداد صحیح',
               ),
               _buildNumberField(
                 label: 'شماره فصل',
+                controller: _chapterOrderController,
+                fieldKey: _chapterOrderKey,
                 onSaved: (v) => _form.chapterOrder = v,
+                onChanged: (v) {
+                  _form.chapterOrder = v;
+                },
                 hint: 'مثال: 1',
               ),
 
@@ -175,19 +249,34 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
               // 8) عنوان درس و شماره درس
               _buildTextField(
                 label: 'عنوان درس',
+                controller: _lessonTitleController,
+                fieldKey: _lessonTitleKey,
                 onSaved: (v) => _form.lessonTitle = v,
+                onChanged: (v) {
+                  _form.lessonTitle = v;
+                },
                 hint: 'مثال: درس اول - جمع اعداد',
               ),
               _buildNumberField(
                 label: 'شماره درس',
+                controller: _lessonOrderController,
+                fieldKey: _lessonOrderKey,
                 onSaved: (v) => _form.lessonOrder = v,
+                onChanged: (v) {
+                  _form.lessonOrder = v;
+                },
                 hint: 'مثال: 1',
               ),
 
               // 9) نام استاد
               _buildTextField(
                 label: 'نام استاد',
+                controller: _teacherNameController,
+                fieldKey: _teacherNameKey,
                 onSaved: (v) => _form.teacherName = v,
+                onChanged: (v) {
+                  _form.teacherName = v;
+                },
                 hint: 'مثال: استاد احمدی',
               ),
 
@@ -197,7 +286,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                   Expanded(
                     child: _buildNumberField(
                       label: 'ساعت',
+                      controller: _durationHoursController,
+                      fieldKey: _durationHoursKey,
                       onSaved: (v) => _form.durationHours = v,
+                      onChanged: (v) {
+                        _form.durationHours = v;
+                      },
                       hint: '0',
                     ),
                   ),
@@ -205,7 +299,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                   Expanded(
                     child: _buildNumberField(
                       label: 'دقیقه',
+                      controller: _durationMinutesController,
+                      fieldKey: _durationMinutesKey,
                       onSaved: (v) => _form.durationMinutes = v,
+                      onChanged: (v) {
+                        _form.durationMinutes = v;
+                      },
                       hint: '0-59',
                     ),
                   ),
@@ -213,7 +312,12 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                   Expanded(
                     child: _buildNumberField(
                       label: 'ثانیه',
+                      controller: _durationSecondsController,
+                      fieldKey: _durationSecondsKey,
                       onSaved: (v) => _form.durationSeconds = v,
+                      onChanged: (v) {
+                        _form.durationSeconds = v;
+                      },
                       hint: '0-59',
                     ),
                   ),
@@ -223,22 +327,42 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
               // 11) سایر فیلدها
               _buildTextField(
                 label: 'تگ‌ها (با کاما جدا کنید)',
+                controller: _tagsController,
+                fieldKey: _tagsKey,
                 onSaved: (v) => _form.tags = v,
+                onChanged: (v) {
+                  _form.tags = v;
+                },
                 hint: 'مثال: حد, پایه ۹, تابع',
               ),
               _buildTextField(
                 label: 'Embed HTML آپارات (اختیاری)',
+                controller: _embedHtmlController,
+                fieldKey: _embedHtmlKey,
                 onSaved: (v) => _form.embedHtml = v,
+                onChanged: (v) {
+                  _form.embedHtml = v;
+                },
                 hint: 'کد embed آپارات',
               ),
               _buildTextField(
                 label: 'لینک PDF جزوه (اختیاری)',
+                controller: _notePdfUrlController,
+                fieldKey: _notePdfUrlKey,
                 onSaved: (v) => _form.notePdfUrl = v,
+                onChanged: (v) {
+                  _form.notePdfUrl = v;
+                },
                 hint: 'https://...',
               ),
               _buildTextField(
                 label: 'لینک PDF نمونه سوال (اختیاری)',
+                controller: _exercisePdfUrlController,
+                fieldKey: _exercisePdfUrlKey,
                 onSaved: (v) => _form.exercisePdfUrl = v,
+                onChanged: (v) {
+                  _form.exercisePdfUrl = v;
+                },
                 hint: 'https://...',
               ),
 
@@ -279,26 +403,35 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Directionality(
         textDirection: TextDirection.rtl,
-        child: DropdownButtonFormField<T>(
-          value: items.contains(value) ? value : null,
-          items: items
-              .map((e) => DropdownMenuItem<T>(
-                    value: e,
-                    child: Text('$e', style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
-                  ))
-              .toList(),
-          onChanged: (v) {
-            setState(() {
-              onChanged(v);
-            });
+        child: StatefulBuilder(
+          builder: (context, setDropdownState) {
+            return DropdownButtonFormField<T>(
+              value: items.contains(value) ? value : null,
+              items: items
+                  .map((e) => DropdownMenuItem<T>(
+                        value: e,
+                        child: Text('$e', style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                // فقط dropdown rebuild می‌شود، نه کل صفحه
+                setDropdownState(() {
+                  onChanged(v);
+                });
+                // فقط برای به‌روزرسانی dropdown های وابسته setState صدا بزن
+                if (label == 'شاخه' || label == 'پایه' || label == 'رشته') {
+                  setState(() {});
+                }
+              },
+              decoration: InputDecoration(
+                labelText: label,
+                hintText: hint,
+                labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+                border: const OutlineInputBorder(),
+              ),
+              isExpanded: true,
+            );
           },
-          decoration: InputDecoration(
-            labelText: label,
-            hintText: hint,
-            labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
-            border: const OutlineInputBorder(),
-          ),
-          isExpanded: true,
         ),
       ),
     );
@@ -308,11 +441,16 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   Widget _buildTextField({
     required String label,
     required void Function(String?) onSaved,
+    TextEditingController? controller,
+    void Function(String?)? onChanged,
+    Key? fieldKey,
     String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -322,6 +460,10 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
         onSaved: onSaved,
+        onChanged: onChanged ?? (value) {
+          // همگام‌سازی با form هنگام تایپ (برای جلوگیری از پاک شدن هنگام scroll)
+          onSaved(value);
+        },
       ),
     );
   }
@@ -330,11 +472,16 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   Widget _buildNumberField({
     required String label,
     required void Function(int?) onSaved,
+    TextEditingController? controller,
+    void Function(int?)? onChanged,
+    Key? fieldKey,
     String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -345,13 +492,36 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
         onSaved: (v) => onSaved(int.tryParse(v ?? '')),
+        onChanged: (value) {
+          // همگام‌سازی با form هنگام تایپ (برای جلوگیری از پاک شدن هنگام scroll)
+          final intValue = int.tryParse(value.trim());
+          if (onChanged != null) {
+            onChanged(intValue);
+          } else {
+            onSaved(intValue);
+          }
+        },
       ),
     );
   }
 
   Future<void> _handleSubmit() async {
-    // ذخیره مقادیر فرم
+    // ذخیره مقادیر فرم از controller ها به _form
     _formKey.currentState?.save();
+    
+    // همچنین مقادیر را مستقیماً از controller ها بگیر (برای اطمینان)
+    _form.chapterTitle = _chapterTitleController.text.trim().isEmpty ? null : _chapterTitleController.text.trim();
+    _form.chapterOrder = int.tryParse(_chapterOrderController.text.trim());
+    _form.lessonTitle = _lessonTitleController.text.trim().isEmpty ? null : _lessonTitleController.text.trim();
+    _form.lessonOrder = int.tryParse(_lessonOrderController.text.trim());
+    _form.teacherName = _teacherNameController.text.trim().isEmpty ? null : _teacherNameController.text.trim();
+    _form.tags = _tagsController.text.trim().isEmpty ? null : _tagsController.text.trim();
+    _form.embedHtml = _embedHtmlController.text.trim().isEmpty ? null : _embedHtmlController.text.trim();
+    _form.notePdfUrl = _notePdfUrlController.text.trim().isEmpty ? null : _notePdfUrlController.text.trim();
+    _form.exercisePdfUrl = _exercisePdfUrlController.text.trim().isEmpty ? null : _exercisePdfUrlController.text.trim();
+    _form.durationHours = int.tryParse(_durationHoursController.text.trim());
+    _form.durationMinutes = int.tryParse(_durationMinutesController.text.trim());
+    _form.durationSeconds = int.tryParse(_durationSecondsController.text.trim());
 
     // اعتبارسنجی حداقلی
     final err = _form.validate();

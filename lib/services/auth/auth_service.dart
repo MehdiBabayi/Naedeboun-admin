@@ -453,6 +453,7 @@ class AuthService extends ChangeNotifier {
 
       if (response.status == 403) {
         final error = response.data['error'] as String?;
+        Logger.error('❌ [SEND-OTP] 403 Error from server', error ?? 'Unknown error');
         throw AuthServiceException(error ?? 'حساب شما مسدود شده است');
       }
 
@@ -472,6 +473,10 @@ class AuthService extends ChangeNotifier {
       Logger.info("OTP sent successfully. Code: $code, Status: $status");
     } catch (e) {
       Logger.error("Error in _sendOtpViaFunction", e);
+      // اگر AuthServiceException است، مستقیماً rethrow کن
+      if (e is AuthServiceException) {
+        rethrow;
+      }
       throw Exception('خطا در ارسال پیامک: $e');
     }
   }
