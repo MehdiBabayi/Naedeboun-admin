@@ -17,6 +17,9 @@ import '../../utils/logger.dart';
 class DevSettingsButton extends StatelessWidget {
   const DevSettingsButton({super.key});
 
+  // Flag برای جلوگیری از باز شدن چند Dialog پشت سر هم
+  static bool _isDialogOpen = false;
+
   @override
   Widget build(BuildContext context) {
     final currentRoute = ModalRoute.of(context)?.settings.name ?? 'unknown';
@@ -44,13 +47,28 @@ class DevSettingsButton extends StatelessWidget {
 
   /// نمایش Dialog تنظیمات موقت
   void _showDevSettings(BuildContext context) {
+    // اگر Dialog قبلاً باز است، دوباره باز نکن
+    if (_isDialogOpen) {
+      Logger.debug('🔧 DevSettingsButton: Dialog already open, ignoring request');
+      return;
+    }
+
     final navigator = AppNavigator.navigatorKey.currentState;
     final dialogContext = navigator?.overlay?.context ?? context;
+    
+    // علامت‌گذاری که Dialog باز است
+    _isDialogOpen = true;
+    
     showDialog(
       context: dialogContext,
       useRootNavigator: true,
+      barrierDismissible: true,
       builder: (context) => const DevSettingsDialog(),
-    );
+    ).then((_) {
+      // وقتی Dialog بسته می‌شود، flag را reset کن
+      _isDialogOpen = false;
+      Logger.debug('🔧 DevSettingsButton: Dialog closed, flag reset');
+    });
   }
 }
 

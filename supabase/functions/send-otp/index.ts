@@ -205,6 +205,30 @@ serve(async (req) => {
 
     console.log('✅ [SEND-OTP] Rate limit OK, proceeding with OTP...');
 
+    // ========== 3. بررسی اینکه کاربر ادمین است یا نه ==========
+    console.log('🔍 [SEND-OTP] Checking if user is admin...');
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('user_role, phone_number')
+      .eq('phone_number', normalizedPhone)
+      .maybeSingle();
+    
+    // اگر کاربر وجود دارد و ادمین نیست، خطا برگردان
+    if (profile && profile.user_role !== 'admin') {
+      console.log(`❌ [SEND-OTP] User is not admin. Role: ${profile.user_role}`);
+      return new Response(
+        JSON.stringify({ 
+          error: 'شماره شما برای این اپلیکیشن غیر مجاز است. لطفاً با شماره تلفن ادمین وارد شوید.' 
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // اگر کاربر وجود ندارد (اولین بار است)، به او اجازه بده (بعداً در verify-otp بررسی می‌شود)
+    // اگر کاربر وجود دارد و ادمین است، ادامه بده
+    console.log('✅ [SEND-OTP] User is admin or new user, proceeding...');
+
     // تولید کد OTP
     const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
     const expiryTime = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
