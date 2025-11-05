@@ -32,6 +32,8 @@ import 'services/image_cache/smart_image_cache_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'utils/logger.dart';
 import 'screens/video_upload/video_upload_screen.dart';
+import 'screens/step_by_step_upload/step_by_step_upload_screen.dart';
+import 'screens/provincial_sample_upload/provincial_sample_upload_screen.dart';
 
 /// تنظیم orientation بر اساس کانفیگ
 Future<void> _setOrientationFromConfig() async {
@@ -210,6 +212,10 @@ class MyApp extends StatelessWidget {
                 const SimpleNetworkWrapper(child: StepByStepScreen()),
             '/video-upload': (context) =>
                 const SimpleNetworkWrapper(child: VideoUploadScreen()),
+            '/step-by-step-upload': (context) =>
+                const SimpleNetworkWrapper(child: StepByStepUploadScreen()),
+            '/provincial-sample-upload': (context) =>
+                const SimpleNetworkWrapper(child: ProvincialSampleUploadScreen()),
             '/subject': (context) {
               final args =
                   ModalRoute.of(context)?.settings.arguments

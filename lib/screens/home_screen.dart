@@ -36,6 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showEmptyState = false;
   Timer? _emptyStateTimer;
 
+  // کنترل اسلایدر آپلود
+  final PageController _uploadPageController = PageController();
+  int _currentUploadPage = 0;
+
   bool _isAnyAsyncOperationRunning() {
     return _isProcessingGradeChange || _isLoadingSubjects;
   }
@@ -136,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _uploadPageController.dispose();
     _emptyStateTimer?.cancel();
     super.dispose();
   }
@@ -778,50 +783,50 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              // کانتینر اضافه کردن ویدیو (به‌جای بنر سابق)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                child: Container(
-                  width: double.infinity,
-                  height: 180,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () =>
-                          Navigator.of(context).pushNamed('/video-upload'),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+              // اسلایدر اضافه کردن محتوا (ویدیو، گام‌به‌گام، نمونه سوال)
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                    child: SizedBox(
+                      height: 180,
+                      child: PageView(
+                        controller: _uploadPageController,
+                        onPageChanged: (index) {
+                          setState(() {
+                            _currentUploadPage = index;
+                          });
+                        },
                         children: [
-                          const Text(
-                            'اضافه کردن ویدیو',
-                            textDirection: TextDirection.rtl,
-                            style: TextStyle(
-                              fontFamily: 'IRANSansXFaNum',
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          // کارت 1: اضافه کردن ویدیو
+                          _buildUploadCard(
+                            context,
+                            title: 'اضافه کردن ویدیو',
+                            icon: Icons.video_library,
+                            onTap: () => Navigator.of(context).pushNamed('/video-upload'),
                           ),
-                          const SizedBox(height: 8),
-                          Icon(
-                            Icons.add_circle_outline,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.primary,
+                          // کارت 2: اضافه کردن گام‌به‌گام
+                          _buildUploadCard(
+                            context,
+                            title: 'اضافه کردن گام‌به‌گام',
+                            icon: Icons.book,
+                            onTap: () => Navigator.of(context).pushNamed('/step-by-step-upload'),
+                          ),
+                          // کارت 3: اضافه کردن نمونه سوال
+                          _buildUploadCard(
+                            context,
+                            title: 'اضافه کردن نمونه سوال',
+                            icon: Icons.quiz,
+                            onTap: () => Navigator.of(context).pushNamed('/provincial-sample-upload'),
                           ),
                         ],
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  // نشانگر اسلایدر (dots)
+                  _buildPageIndicator(context),
+                ],
               ),
               const SizedBox(height: 24),
               Padding(
@@ -901,6 +906,84 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
+
+  // کارت آپلود محتوا (برای اسلایدر)
+  Widget _buildUploadCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                title,
+                textDirection: TextDirection.rtl,
+                style: const TextStyle(
+                  fontFamily: 'IRANSansXFaNum',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Icon(
+                icon,
+                size: 64,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // نشانگر صفحات اسلایدر (dots)
+  Widget _buildPageIndicator(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    const totalPages = 3;
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(totalPages, (index) {
+        final isActive = index == _currentUploadPage;
+        return GestureDetector(
+          onTap: () {
+            _uploadPageController.animateToPage(
+              index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            width: isActive ? 24 : 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: isActive ? primaryColor : primaryColor.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
 }
 
 class _SubjectCard extends StatelessWidget {

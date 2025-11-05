@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../utils/logger.dart';
-import '../../models/video_upload/video_upload_form_data.dart';
-import '../../services/video_upload/video_upload_service.dart';
+import '../../utils/grade_utils.dart';
+import '../../models/step_by_step_upload/step_by_step_upload_form_data.dart';
+import '../../services/step_by_step_upload/step_by_step_upload_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// صفحه آپلود ویدیو (نسخه ساده برای شروع تست)
-class VideoUploadScreen extends StatefulWidget {
-  const VideoUploadScreen({super.key});
+/// صفحه آپلود گام‌به‌گام
+class StepByStepUploadScreen extends StatefulWidget {
+  const StepByStepUploadScreen({super.key});
 
   @override
-  State<VideoUploadScreen> createState() => _VideoUploadScreenState();
+  State<StepByStepUploadScreen> createState() => _StepByStepUploadScreenState();
 }
 
-class _VideoUploadScreenState extends State<VideoUploadScreen> {
+class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _form = VideoUploadFormData();
-  final _service = VideoUploadService();
+  final _form = StepByStepUploadFormData();
+  final _service = StepByStepUploadService();
   bool _submitting = false;
 
-  // داده‌های Dropdown مطابق PHP
+  // داده‌های Dropdown مطابق video_upload
   final Map<String, List<String>> _gradesData = const {
     'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
     'متوسطه اول': ['هفتم', 'هشتم', 'نهم'],
@@ -63,19 +65,29 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     'زیست شناسی': 'zist',
   };
 
+  // نگاشت نام درس به ID (از دیتابیس)
+  final Map<String, int> _subjectNameToId = {
+    'ریاضی': 1,
+    'علوم': 2,
+    'فارسی': 3,
+    'قرآن': 4,
+    'مطالعات اجتماعی': 5,
+    'هدیه های آسمانی': 6,
+    'نگارش': 7,
+    'عربی': 9,
+    'انگلیسی': 10,
+    'دینی': 14,
+  };
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final isHighSchool = _form.branch == 'متوسطه دوم';
-
-    // لیست پایه‌ها بر اساس شاخه انتخاب‌شده
     final grades = _gradesData[_form.branch ?? ''] ?? <String>[];
 
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          // جابه‌جایی دکمه بازگشت به سمت مخالف (چپ در RTL)
           automaticallyImplyLeading: false,
           actions: [
             IconButton(
@@ -85,7 +97,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
             ),
           ],
           title: const Text(
-            'آپلود ویدیو',
+            'آپلود گام‌به‌گام',
             style: TextStyle(fontFamily: 'IRANSansXFaNum'),
           ),
         ),
@@ -94,7 +106,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             children: [
-              // 1) شاخه
+              // 1) شاخه (هم محدود کننده پایه و هم برای دیتابیس)
               _buildDropdown<String>(
                 label: 'شاخه',
                 value: _form.branch,
@@ -102,7 +114,6 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 onChanged: (v) {
                   setState(() {
                     _form.branch = v;
-                    // ریست وابسته‌ها
                     _form.grade = null;
                     _form.track = 'بدون رشته';
                   });
@@ -118,7 +129,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 hint: grades.isEmpty ? 'ابتدا شاخه را انتخاب کنید' : null,
               ),
 
-              // 3) رشته (فقط برای متوسطه دوم نمایش بده)
+              // 3) رشته (فقط برای متوسطه دوم)
               if (isHighSchool)
                 _buildDropdown<String>(
                   label: 'رشته',
@@ -132,122 +143,60 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                 label: 'درس',
                 value: _form.subject,
                 items: _subjectOptions.keys.toList(),
-                onChanged: (v) {
-                  setState(() {
-                    _form.subject = v;
-                    // همگام‌سازی اسلاگ با انتخاب درس
-                    final slug = v == null ? null : _subjectOptions[v];
-                    _form.subjectSlug = slug;
-                  });
-                },
+                onChanged: (v) => setState(() => _form.subject = v),
               ),
 
-              // 5) اسلاگ درس (قابل تغییر اما پیش‌فرض از درس)
-              _buildDropdown<String>(
-                label: 'اسلاگ درس',
-                value: _form.subjectSlug,
-                items: _subjectOptions.values.toList(),
-                onChanged: (v) => setState(() => _form.subjectSlug = v),
-                hint: 'با انتخاب درس به‌صورت خودکار پر می‌شود',
-              ),
-
-              // 6) عنوان فصل
+              // 5) عنوان
               _buildTextField(
-                label: 'عنوان فصل',
-                onSaved: (v) => _form.chapterTitle = v,
-                hint: 'مثال: فصل اول - اعداد صحیح',
-              ),
-              _buildNumberField(
-                label: 'شماره فصل',
-                onSaved: (v) => _form.chapterOrder = v,
-                hint: 'مثال: 1',
+                label: 'عنوان',
+                onSaved: (v) => _form.title = v,
+                hint: 'مثال: گام به گام ریاضی - فصل اول',
+                maxLength: 200,
               ),
 
-              // 7) نوع محتوا (Dropdown)
-              _buildDropdown<String>(
-                label: 'نوع محتوا',
-                value: _form.style,
-                items: const ['جزوه', 'نمونه سوال', 'کتاب درسی'],
-                onChanged: (v) => _form.style = v,
-                hint: 'انتخاب کنید',
-              ),
-
-              // 8) عنوان درس و شماره درس
+              // 7) لینک PDF
               _buildTextField(
-                label: 'عنوان درس',
-                onSaved: (v) => _form.lessonTitle = v,
-                hint: 'مثال: درس اول - جمع اعداد',
-              ),
-              _buildNumberField(
-                label: 'شماره درس',
-                onSaved: (v) => _form.lessonOrder = v,
-                hint: 'مثال: 1',
+                label: 'لینک PDF',
+                onSaved: (v) => _form.pdfUrl = v,
+                hint: 'https://...',
+                maxLength: 500,
               ),
 
-              // 9) نام استاد
-              _buildTextField(
-                label: 'نام استاد',
-                onSaved: (v) => _form.teacherName = v,
-                hint: 'مثال: استاد احمدی',
+              // 8) حجم فایل (اختیاری)
+              _buildDoubleField(
+                label: 'حجم فایل (مگابایت) - اختیاری',
+                onSaved: (v) => _form.fileSizeMb = v,
+                hint: 'مثال: 2.5',
               ),
 
-              // 10) مدت زمان
+              // 9) تعداد صفحات (اختیاری)
+              _buildIntField(
+                label: 'تعداد صفحات - اختیاری',
+                onSaved: (v) => _form.pageCount = v,
+                hint: 'مثال: 25',
+              ),
+
+              // 10) فعال/غیرفعال
               Row(
                 children: [
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'ساعت',
-                      onSaved: (v) => _form.durationHours = v,
-                      hint: '0',
-                    ),
+                  Checkbox(
+                    value: _form.active,
+                    onChanged: (v) => setState(() => _form.active = v ?? true),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'دقیقه',
-                      onSaved: (v) => _form.durationMinutes = v,
-                      hint: '0-59',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'ثانیه',
-                      onSaved: (v) => _form.durationSeconds = v,
-                      hint: '0-59',
-                    ),
+                  const Text(
+                    'فعال',
+                    style: TextStyle(fontFamily: 'IRANSansXFaNum'),
                   ),
                 ],
-              ),
-
-              // 11) سایر فیلدها
-              _buildTextField(
-                label: 'تگ‌ها (با کاما جدا کنید)',
-                onSaved: (v) => _form.tags = v,
-                hint: 'مثال: حد, پایه ۹, تابع',
-              ),
-              _buildTextField(
-                label: 'Embed HTML آپارات (اختیاری)',
-                onSaved: (v) => _form.embedHtml = v,
-                hint: 'کد embed آپارات',
-              ),
-              _buildTextField(
-                label: 'لینک PDF جزوه (اختیاری)',
-                onSaved: (v) => _form.notePdfUrl = v,
-                hint: 'https://...',
-              ),
-              _buildTextField(
-                label: 'لینک PDF نمونه سوال (اختیاری)',
-                onSaved: (v) => _form.exercisePdfUrl = v,
-                hint: 'https://...',
               ),
 
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _submitting ? null : _handleSubmit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 ),
                 child: _submitting
                     ? const SizedBox(
@@ -256,7 +205,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text(
-                        'ارسال ویدیو',
+                        'ارسال گام‌به‌گام',
                         style: TextStyle(fontFamily: 'IRANSansXFaNum'),
                       ),
               ),
@@ -304,20 +253,23 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     );
   }
 
-  // فیلد متنی RTL با فونت ایرانسنس
+  // فیلد متنی RTL
   Widget _buildTextField({
     required String label,
     required void Function(String?) onSaved,
     String? hint,
+    int? maxLength,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        maxLength: maxLength,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
           border: const OutlineInputBorder(),
+          counterText: '',
         ),
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
@@ -326,8 +278,8 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     );
   }
 
-  // فیلد عددی ساده
-  Widget _buildNumberField({
+  // فیلد عددی برای int
+  Widget _buildIntField({
     required String label,
     required void Function(int?) onSaved,
     String? hint,
@@ -344,16 +296,49 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         keyboardType: TextInputType.number,
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
-        onSaved: (v) => onSaved(int.tryParse(v ?? '')),
+        onSaved: (v) {
+          if (v == null || v.trim().isEmpty) {
+            onSaved(null);
+            return;
+          }
+          onSaved(int.tryParse(v.trim()));
+        },
+      ),
+    );
+  }
+
+  // فیلد عددی برای double
+  Widget _buildDoubleField({
+    required String label,
+    required void Function(double?) onSaved,
+    String? hint,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: TextFormField(
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+          border: const OutlineInputBorder(),
+        ),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textDirection: TextDirection.rtl,
+        textAlign: TextAlign.right,
+        onSaved: (v) {
+          if (v == null || v.trim().isEmpty) {
+            onSaved(null);
+            return;
+          }
+          onSaved(double.tryParse(v.trim()));
+        },
       ),
     );
   }
 
   Future<void> _handleSubmit() async {
-    // ذخیره مقادیر فرم
     _formKey.currentState?.save();
 
-    // اعتبارسنجی حداقلی
     final err = _form.validate();
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -364,41 +349,68 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
 
     setState(() => _submitting = true);
     try {
+      // تبدیل نام پایه به grade_id
+      final gradeName = _form.grade!;
+      final gradeId = mapGradeStringToInt(gradeName);
+      if (gradeId == null) {
+        throw Exception('خطا در تبدیل نام پایه به ID');
+      }
+
+      // تبدیل نام رشته به track_id
+      int? trackId;
+      final trackName = _form.track;
+      if (trackName != null && trackName != 'بدون رشته') {
+        final supabase = Supabase.instance.client;
+        final tracks = await supabase
+            .from('tracks')
+            .select('id')
+            .eq('name', trackName)
+            .limit(1);
+        if (tracks.isNotEmpty) {
+          trackId = (tracks.first as Map<String, dynamic>)['id'] as int;
+        }
+      }
+
+      // تبدیل نام درس به subject_id
+      final subjectId = _subjectNameToId[_form.subject];
+      if (subjectId == null) {
+        throw Exception('خطا: درس انتخابی در لیست موجود نیست');
+      }
+
+      // تبدیل branch به level برای دیتابیس
+      final levelForDb = _form.levelForDatabase;
+      if (levelForDb == null) {
+        throw Exception('خطا در تبدیل شاخه به مقطع');
+      }
+
       final payload = {
         'branch': _form.branch,
-        'grade': _form.grade,
-        'track': (_form.track == null || _form.track!.isEmpty || _form.track == 'بدون رشته')
-            ? null
-            : _form.track,
-        'subject': _form.subject,
-        'subject_slug': _form.subjectSlug,
-        'chapter_title': _form.chapterTitle,
-        'chapter_order': _form.chapterOrder,
-        'lesson_title': _form.lessonTitle,
-        'lesson_order': _form.lessonOrder,
-        'teacher_name': _form.teacherName,
-        'style': _form.style,
-        'duration_sec': _form.durationInSeconds,
-        'tags': _form.tagsList,
-        'embed_html': _form.embedHtml,
-        'allow_landscape': true,
-        'note_pdf_url': _form.notePdfUrl,
-        'exercise_pdf_url': _form.exercisePdfUrl,
-        'aparat_url': '',
+        'grade_name': gradeName,
+        'grade_id': gradeId,
+        'track_id': trackId,
+        'subject_name': _form.subject,
+        'subject_id': subjectId,
+        'level': levelForDb,
+        'title': _form.title,
+        'pdf_url': _form.pdfUrl,
+        'file_size_mb': _form.fileSizeMb,
+        'page_count': _form.pageCount,
+        'active': _form.active,
       };
 
-      await _service.uploadVideo(payload: payload);
+      Logger.info('📤 [STEP-BY-STEP-UPLOAD] ارسال با payload: $payload');
+      await _service.uploadStepByStep(payload: payload);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ ویدیو با موفقیت ثبت شد', textDirection: TextDirection.rtl),
+          content: Text('✅ گام‌به‌گام با موفقیت ثبت شد', textDirection: TextDirection.rtl),
           backgroundColor: Colors.green,
         ),
       );
       Navigator.of(context).pop();
     } catch (e) {
-      Logger.error('❌ [VIDEO-UPLOAD] Error', e);
+      Logger.error('❌ [STEP-BY-STEP-UPLOAD] Error', e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -411,3 +423,4 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     }
   }
 }
+
