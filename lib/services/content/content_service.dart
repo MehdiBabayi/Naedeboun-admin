@@ -142,7 +142,7 @@ class ContentService {
   }
 
   Future<List<LessonVideo>> getLessonVideos(int chapterId) async {  // ← تغییر از lessonId
-    final data = await supabase
+    final List<dynamic> data = await supabase
         .from('lesson_videos')
         .select()
         .eq('chapter_id', chapterId)  // ← تغییر از lesson_id
@@ -150,6 +150,6 @@ class ContentService {
         .order('lesson_order', ascending: true)
         .order('style', ascending: true);
     
-    return data.map((j) => LessonVideo.fromJson(j as Map<String, dynamic>)).toList();
+    return data.map((j) => LessonVideo.fromJson(j)).toList();
   }
 }

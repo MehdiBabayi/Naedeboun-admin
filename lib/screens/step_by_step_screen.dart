@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/content/step_by_step_pdf.dart';
 import '../models/content/subject.dart';
 import '../services/content/cached_content_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/pdf/pdf_service.dart';
 import '../providers/core/app_state_manager.dart';
 import 'pdf_reader_screen_pdfx.dart';
@@ -11,6 +12,9 @@ import '../widgets/common/smooth_scroll_physics.dart';
 import '../../utils/grade_utils.dart';
 import '../widgets/common/empty_state_widget.dart';
 import '../widgets/network/network_wrapper.dart';
+import '../../utils/logger.dart';
+import '../../services/pdf_edit/pdf_edit_service.dart';
+import '../../services/pdf_delete/pdf_delete_service.dart';
 
 class StepByStepScreen extends StatefulWidget {
   const StepByStepScreen({super.key});
@@ -30,6 +34,115 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     _load();
   }
 
+  Future<void> _showEditStepByStep(StepByStepPdf pdf) async {
+    final titleCtrl = TextEditingController(text: pdf.title);
+    final urlCtrl = TextEditingController(text: pdf.pdfUrl);
+    await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('ویرایش گام‌به‌گام', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(labelText: 'عنوان'),
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.right,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: urlCtrl,
+                decoration: const InputDecoration(labelText: 'لینک PDF'),
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.right,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('انصراف')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  final service = PdfEditService();
+                  await service.updatePdf(
+                    type: 'step_by_step',
+                    id: pdf.id,
+                    updates: {
+                      'title': titleCtrl.text.trim(),
+                      'pdf_url': urlCtrl.text.trim(),
+                    },
+                  );
+                  Logger.info('✅ [STEP-BY-STEP] ویرایش موفق');
+                  await _load();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('✅ بروزرسانی شد', textDirection: TextDirection.rtl),
+                    backgroundColor: Colors.green,
+                  ));
+                } catch (e) {
+                  Logger.error('❌ [STEP-BY-STEP] خطا در ویرایش', e);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('❌ خطا: $e', textDirection: TextDirection.rtl),
+                    backgroundColor: Colors.red,
+                  ));
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('ذخیره'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteStepByStep(StepByStepPdf pdf) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تایید حذف', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          content: Text('حذف «${pdf.title}»؟', textDirection: TextDirection.rtl),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final service = PdfDeleteService();
+      await service.deletePdf(type: 'step_by_step', id: pdf.id);
+      Logger.info('✅ [STEP-BY-STEP] حذف موفق');
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('✅ حذف شد', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.green,
+      ));
+    } catch (e) {
+      Logger.error('❌ [STEP-BY-STEP] خطا در حذف', e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('❌ خطا: $e', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
   Future<void> _load() async {
     final appState = context.read<AppStateManager>();
     final gradeId = appState.authService.currentProfile?.grade ?? 7;
@@ -41,15 +154,46 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
       trackId: trackId,
     );
 
-    final pdfs = await CachedContentService.getStepByStepPdfs(
-      gradeId: gradeId,
-      trackId: trackId,
-    );
+    // ✅ تغییر: مستقیماً از Supabase بخوان (بدون Mini-Request)
+    final supabase = Supabase.instance.client;
+    Logger.info('📚 [STEP-BY-STEP] بارگذاری PDF‌ها برای grade_id: $gradeId, track_id: $trackId');
+    
+    final pdfsData = await supabase
+        .from('step_by_step_pdfs')
+        .select('*')
+        .eq('grade_id', gradeId)
+        .eq('active', true)
+        .filter('track_id', trackId == null ? 'is' : 'eq', trackId)
+        .order('updated_at', ascending: false);
+    
+    final pdfs = (pdfsData as List<dynamic>)
+        .map((j) => StepByStepPdf.fromJson(Map<String, dynamic>.from(j)))
+        .toList();
+    
+    Logger.info('✅ [STEP-BY-STEP] ${pdfs.length} PDF پیدا شد');
 
     // گروه‌بندی PDF‌ها بر اساس درس
     final pdfsBySubject = <int, List<StepByStepPdf>>{};
     for (final pdf in pdfs) {
       pdfsBySubject.putIfAbsent(pdf.subjectId, () => []).add(pdf);
+    }
+
+    // اطمینان از حضور همه دروسی که PDF دارند در لیست subjects
+    final pdfSubjectIds = pdfsBySubject.keys.toSet();
+    final existingIds = subjects.map((s) => s.id).toSet();
+    for (final id in pdfSubjectIds) {
+      if (!existingIds.contains(id)) {
+        subjects.add(
+          Subject(
+            id: id,
+            name: _fallbackSubjectNames[id] ?? 'درس ${id}',
+            slug: '',
+            iconPath: '',
+            bookCoverPath: '',
+            active: true,
+          ),
+        );
+      }
     }
 
     // سورت کردن subjects: اولویت با موجود ها (با PDF)
@@ -73,6 +217,52 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
       _pdfsBySubject = pdfsBySubject;
       _loading = false;
     });
+  }
+
+  // نام‌های پیش‌فرض برای دروسی که در لیست subjects نبودند
+  static const Map<int, String> _fallbackSubjectNames = {
+    1: 'ریاضی',
+    2: 'علوم',
+    3: 'فارسی',
+    4: 'قرآن',
+    5: 'مطالعات اجتماعی',
+    6: 'هدیه‌های آسمانی',
+    7: 'نگارش',
+    9: 'عربی',
+    10: 'انگلیسی',
+    14: 'دینی',
+  };
+
+  // آیکون‌های پیش‌فرض برای زمانی که iconPath/slug نداریم
+  static const Map<int, String> _fallbackSubjectIcons = {
+    1: 'riazi.png',
+    2: 'olom.png',
+    3: 'farsi.png',
+    4: 'quran.png',
+    5: 'motaleat.png',
+    6: 'hediye.png',
+    7: 'negaresh.png',
+    9: 'arabi.png',
+    10: 'englisi.png',
+    14: 'dini.png',
+  };
+
+  String _getSubjectIconPath(Subject subject) {
+    if (subject.iconPath.isNotEmpty && subject.iconPath.startsWith('assets/')) {
+      return subject.iconPath;
+    }
+    if (subject.iconPath.isNotEmpty) {
+      return 'assets/images/icon-darsha/${subject.iconPath}';
+    }
+    if (subject.slug.isNotEmpty) {
+      return 'assets/images/icon-darsha/${subject.slug}.png';
+    }
+    final fallback = _fallbackSubjectIcons[subject.id];
+    if (fallback != null) {
+      return 'assets/images/icon-darsha/$fallback';
+    }
+    // یک آیکون کلی؛ errorBuilder هم پوشش می‌دهد
+    return 'assets/images/icon-darsha/riazi.png';
   }
 
   @override
@@ -154,7 +344,7 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
                           onRefresh: () async {
-                            await CachedContentService.refreshStepByStepPdfs();
+                            // ✅ تغییر: فقط رفرش کن (بدون Mini-Request)
                             await _load();
                           },
                           child: _subjects.isEmpty
@@ -260,12 +450,7 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
               ),
               child: ClipOval(
                 child: Image.asset(
-                  subject.iconPath.isNotEmpty &&
-                          subject.iconPath.startsWith('assets/')
-                      ? subject.iconPath
-                      : subject.iconPath.isNotEmpty
-                      ? 'assets/images/icon-darsha/${subject.iconPath}'
-                      : 'assets/images/icon-darsha/${subject.slug}.png',
+                  _getSubjectIconPath(subject),
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
@@ -446,31 +631,11 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // دکمه خواندن
+          // دکمه ویرایش (سبز)
           InkWell(
             onTap: () {
               Navigator.pop(ctx);
-              _openPdf(pdf);
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade100,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.visibility,
-                size: 20,
-                color: Colors.blue.shade700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // دکمه دانلود
-          InkWell(
-            onTap: () {
-              Navigator.pop(ctx);
-              _downloadPdf(pdf);
+              _showEditStepByStep(pdf);
             },
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -479,9 +644,29 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Icon(
-                Icons.download,
+                Icons.edit,
                 size: 20,
                 color: Colors.green.shade700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // دکمه حذف (قرمز)
+          InkWell(
+            onTap: () {
+              Navigator.pop(ctx);
+              _confirmDeleteStepByStep(pdf);
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.shade100,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.delete,
+                size: 20,
+                color: Colors.red.shade700,
               ),
             ),
           ),

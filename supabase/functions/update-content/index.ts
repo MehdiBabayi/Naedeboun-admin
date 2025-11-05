@@ -17,6 +17,13 @@ interface UpdateContentInput {
     content_status?: 'draft' | 'published' | 'archived';
     teacher_name?: string;
     style?: 'note' | 'book' | 'sample';
+    embed_html?: string | null;
+    note_pdf_url?: string | null;
+    exercise_pdf_url?: string | null;
+    chapter_title?: string;  // ← جدید
+    chapter_order?: number;  // ← جدید
+    lesson_title?: string;  // ← جدید
+    lesson_order?: number;  // ← جدید
   };
 }
 
@@ -27,6 +34,9 @@ serve(async (req) => {
 
   try {
     const input: UpdateContentInput = await req.json();
+    
+    console.log('🔄 [UPDATE-CONTENT] شروع به‌روزرسانی ویدیو ID:', input.lesson_video_id);
+    console.log('🔄 [UPDATE-CONTENT] Updates:', JSON.stringify(input.updates));
     
     if (!input.lesson_video_id || !input.updates) {
       return new Response(
@@ -99,6 +109,40 @@ serve(async (req) => {
     if (input.updates.active !== undefined) videoUpdates.active = input.updates.active;
     if (input.updates.content_status !== undefined) videoUpdates.content_status = input.updates.content_status;
     if (input.updates.style !== undefined) videoUpdates.style = input.updates.style;
+    if (input.updates.embed_html !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی embed_html');
+      videoUpdates.embed_html = input.updates.embed_html;
+    }
+    if (input.updates.note_pdf_url !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی note_pdf_url');
+      videoUpdates.note_pdf_url = input.updates.note_pdf_url;
+    }
+    if (input.updates.exercise_pdf_url !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی exercise_pdf_url');
+      videoUpdates.exercise_pdf_url = input.updates.exercise_pdf_url;
+    }
+    if (input.updates.chapter_title !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی chapter_title');
+      videoUpdates.chapter_title = input.updates.chapter_title;
+    }
+    if (input.updates.chapter_order !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی chapter_order');
+      if (input.updates.chapter_order < 1) {
+        throw new Error('chapter_order باید بزرگتر یا مساوی 1 باشد');
+      }
+      videoUpdates.chapter_order = input.updates.chapter_order;
+    }
+    if (input.updates.lesson_title !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی lesson_title');
+      videoUpdates.lesson_title = input.updates.lesson_title;
+    }
+    if (input.updates.lesson_order !== undefined) {
+      console.log('🔄 [UPDATE-CONTENT] به‌روزرسانی lesson_order');
+      if (input.updates.lesson_order < 1) {
+        throw new Error('lesson_order باید بزرگتر یا مساوی 1 باشد');
+      }
+      videoUpdates.lesson_order = input.updates.lesson_order;
+    }
 
     // Update lesson_videos
     const { data: updatedVideo, error: updateError } = await supabase
@@ -129,8 +173,11 @@ serve(async (req) => {
       .single();
 
     if (updateError) {
+      console.error('❌ [UPDATE-CONTENT] خطا در به‌روزرسانی:', updateError.message);
       throw new Error(`خطا در به‌روزرسانی ویدیو: ${updateError.message}`);
     }
+
+    console.log('✅ [UPDATE-CONTENT] ویدیو با موفقیت به‌روزرسانی شد');
 
     return new Response(
       JSON.stringify({ 
@@ -142,7 +189,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("Error in update-content function:", error);
+    console.error("❌ [UPDATE-CONTENT] Error in update-content function:", error);
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

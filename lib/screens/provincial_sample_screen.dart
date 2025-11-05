@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/content/provincial_sample_pdf.dart';
 import '../models/content/subject.dart';
 import '../services/content/cached_content_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/pdf/pdf_service.dart';
 import '../providers/core/app_state_manager.dart';
 import 'pdf_reader_screen_pdfx.dart';
@@ -11,6 +12,9 @@ import '../widgets/common/smooth_scroll_physics.dart';
 import '../../utils/grade_utils.dart';
 import '../widgets/common/empty_state_widget.dart';
 import '../widgets/network/network_wrapper.dart';
+import '../../utils/logger.dart';
+import '../../services/pdf_edit/pdf_edit_service.dart';
+import '../../services/pdf_delete/pdf_delete_service.dart';
 
 class ProvincialSampleScreen extends StatefulWidget {
   const ProvincialSampleScreen({super.key});
@@ -52,11 +56,23 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
       trackId: trackId,
     );
 
-    // بارگذاری PDFها
-    final pdfs = await CachedContentService.getProvincialSamplePdfs(
-      gradeId: gradeId,
-      trackId: trackId,
-    );
+    // ✅ تغییر: مستقیماً از Supabase بخوان (بدون Mini-Request)
+    final supabase = Supabase.instance.client;
+    Logger.info('📄 [PROVINCIAL] بارگذاری PDF‌ها برای grade_id: $gradeId, track_id: $trackId');
+    
+    final pdfsData = await supabase
+        .from('provincial_sample_pdfs')
+        .select('*')
+        .eq('grade_id', gradeId)
+        .eq('active', true)
+        .filter('track_id', trackId == null ? 'is' : 'eq', trackId)
+        .order('updated_at', ascending: false);
+    
+    final pdfs = (pdfsData as List<dynamic>)
+        .map((j) => ProvincialSamplePdf.fromJson(Map<String, dynamic>.from(j)))
+        .toList();
+    
+    Logger.info('✅ [PROVINCIAL] ${pdfs.length} PDF پیدا شد');
 
     if (!mounted) return;
     setState(() {
@@ -90,7 +106,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
       (s) => s.id == subjectId,
       orElse: () => Subject(
         id: subjectId,
-        name: 'نامشخص',
+        name: _fallbackSubjectNames[subjectId] ?? 'نامشخص',
         slug: '',
         iconPath: '',
         bookCoverPath: '',
@@ -99,6 +115,19 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
     );
     return subject.name;
   }
+
+  // نام‌های پیش‌فرض در صورتی‌که درس در لیست subjects برنگردد
+  static const Map<int, String> _fallbackSubjectNames = {
+    1: 'ریاضی',
+    2: 'علوم',
+    3: 'فارسی',
+    4: 'قرآن',
+    5: 'مطالعات اجتماعی',
+    6: 'هدیه‌های آسمانی',
+    9: 'عربی',
+    10: 'انگلیسی',
+    14: 'دینی',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -191,21 +220,24 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                                     children: [
                                       _buildSubjectTab('همه', 0),
                                       ...() {
-                                        final sortedSubjects = _subjects
+                                        // تب‌ها بر اساس PDFهای موجود ساخته می‌شوند
+                                        final ids = _pdfs
+                                            .map((p) => p.subjectId)
+                                            .toSet()
                                             .toList();
-                                        sortedSubjects.sort((a, b) {
-                                          // ریاضی اول باشد
-                                          if (a.name == 'ریاضی') return -1;
-                                          if (b.name == 'ریاضی') return 1;
-                                          return a.name.compareTo(b.name);
+                                        // مرتب‌سازی: ریاضی اول سپس بر اساس نام موضوع
+                                        ids.sort((a, b) {
+                                          final an = _getSubjectName(a);
+                                          final bn = _getSubjectName(b);
+                                          if (an == 'ریاضی') return -1;
+                                          if (bn == 'ریاضی') return 1;
+                                          return an.compareTo(bn);
                                         });
-                                        return sortedSubjects
-                                            .map(
-                                              (subject) => _buildSubjectTab(
-                                                subject.name,
-                                                subject.id,
-                                              ),
-                                            )
+                                        return ids
+                                            .map((id) => _buildSubjectTab(
+                                                  _getSubjectName(id),
+                                                  id,
+                                                ))
                                             .toList();
                                       }(),
                                     ],
@@ -216,7 +248,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                             Expanded(
                               child: RefreshIndicator(
                                 onRefresh: () async {
-                                  await CachedContentService.refreshProvincialSamplePdfs();
+                                  // ✅ تغییر: فقط رفرش کن (بدون Mini-Request)
                                   await _load();
                                 },
                                 child: _filteredPdfs.isEmpty
@@ -323,14 +355,14 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
         ),
         child: Row(
           children: [
-            // مربع رنگی سمت راست
+            // مربع رنگی سمت راست (با فاصله از لبه‌های کارت)
             Container(
-              width: 80,
-              height: 80,
-              margin: const EdgeInsets.only(right: 8),
+              width: 72,
+              height: 72,
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
               decoration: BoxDecoration(
                 color: color,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
                 child: Text(
@@ -338,7 +370,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 13,
                     fontFamily: 'IRANSansXFaNum',
                   ),
                   textAlign: TextAlign.center,
@@ -444,35 +476,35 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
+                    // دکمه ویرایش (سبز)
                     ElevatedButton.icon(
                       onPressed: () async {
                         Navigator.of(context).pop();
-                        await _readPdf(pdf);
+                        _showEditProvincial(pdf);
                       },
-                      icon: const Icon(Icons.visibility),
+                      icon: const Icon(Icons.edit),
                       label: const Text(
-                        'خواندن',
-                        style: TextStyle(fontFamily: 'IRANSansXFaNum'),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onPrimary,
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        Navigator.of(context).pop();
-                        await _downloadPdf(pdf);
-                      },
-                      icon: const Icon(Icons.download),
-                      label: const Text(
-                        'دانلود',
+                        'ویرایش',
                         style: TextStyle(fontFamily: 'IRANSansXFaNum'),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    // دکمه حذف (قرمز)
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        _confirmDeleteProvincial(pdf);
+                      },
+                      icon: const Icon(Icons.delete),
+                      label: const Text(
+                        'حذف',
+                        style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -484,6 +516,124 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showEditProvincial(ProvincialSamplePdf pdf) async {
+    final titleCtrl = TextEditingController(text: pdf.title);
+    final urlCtrl = TextEditingController(text: pdf.pdfUrl);
+    final yearCtrl = TextEditingController(text: pdf.publishYear.toString());
+    final designerCtrl = TextEditingController(text: pdf.designer);
+    bool hasAnswer = pdf.hasAnswerKey;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(builder: (ctx, setSt) => AlertDialog(
+          title: const Text('ویرایش نمونه سوال', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'عنوان'), textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                const SizedBox(height: 8),
+                TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'لینک PDF'), textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                const SizedBox(height: 8),
+                TextField(controller: yearCtrl, decoration: const InputDecoration(labelText: 'سال انتشار'), keyboardType: TextInputType.number, textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                const SizedBox(height: 8),
+                TextField(controller: designerCtrl, decoration: const InputDecoration(labelText: 'طراح'), textDirection: TextDirection.rtl, textAlign: TextAlign.right),
+                const SizedBox(height: 8),
+                Row(children:[
+                  Checkbox(value: hasAnswer, onChanged: (v)=> setSt(()=> hasAnswer = v??false)),
+                  const Text('پاسخنامه دارد', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+                ])
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: ()=> Navigator.pop(ctx), child: const Text('انصراف')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  final service = PdfEditService();
+                  await service.updatePdf(
+                    type: 'provincial',
+                    id: pdf.id,
+                    updates: {
+                      'title': titleCtrl.text.trim(),
+                      'pdf_url': urlCtrl.text.trim(),
+                      'publish_year': int.tryParse(yearCtrl.text.trim()) ?? pdf.publishYear,
+                      'designer': designerCtrl.text.trim(),
+                      'has_answer_key': hasAnswer,
+                    },
+                  );
+                  Logger.info('✅ [PROVINCIAL] ویرایش موفق');
+                  await _load();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('✅ بروزرسانی شد', textDirection: TextDirection.rtl),
+                    backgroundColor: Colors.green,
+                  ));
+                } catch (e) {
+                  Logger.error('❌ [PROVINCIAL] خطا در ویرایش', e);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('❌ خطا: $e', textDirection: TextDirection.rtl),
+                    backgroundColor: Colors.red,
+                  ));
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('ذخیره'),
+            ),
+          ],
+        )),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteProvincial(ProvincialSamplePdf pdf) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تایید حذف', style: TextStyle(fontFamily: 'IRANSansXFaNum')),
+          content: Text('حذف «${pdf.title}»؟', textDirection: TextDirection.rtl),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('انصراف')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final service = PdfDeleteService();
+      await service.deletePdf(type: 'provincial', id: pdf.id);
+      Logger.info('✅ [PROVINCIAL] حذف موفق');
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('✅ حذف شد', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.green,
+      ));
+    } catch (e) {
+      Logger.error('❌ [PROVINCIAL] خطا در حذف', e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('❌ خطا: $e', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.red,
+      ));
+    }
   }
 
   Future<void> _readPdf(ProvincialSamplePdf pdf) async {

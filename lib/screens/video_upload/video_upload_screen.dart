@@ -278,7 +278,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: DropdownButtonFormField<T>(
-          value: items.contains(value) ? value : null,
+          initialValue: items.contains(value) ? value : null,
           items: items
               .map((e) => DropdownMenuItem<T>(
                     value: e,

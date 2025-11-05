@@ -192,14 +192,16 @@ class _HomeScreenState extends State<HomeScreen> {
         _subjects = subjects;
         _showEmptyState = subjects.isEmpty;
       });
-      
+
       if (subjects.isEmpty && mounted) {
         _startEmptyStateTimer();
       } else {
         _emptyStateTimer?.cancel();
       }
-      
-      Logger.debug('✅ [HOME] Subjects loaded from Supabase: ${subjects.length}');
+
+      Logger.debug(
+        '✅ [HOME] Subjects loaded from Supabase: ${subjects.length}',
+      );
     } catch (e) {
       Logger.error('❌ [HOME] Error loading subjects', e);
       if (mounted) {
@@ -788,7 +790,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     border: Border.all(
                       color: Theme.of(
                         context,
-                      ).colorScheme.outline.withOpacity(0.2),
+                      ).colorScheme.outline.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Material(

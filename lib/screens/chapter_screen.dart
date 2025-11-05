@@ -8,6 +8,8 @@ import '../widgets/common/smooth_scroll_physics.dart';
 import '../widgets/bubble_nav_bar.dart';
 import '../widgets/common/empty_state_widget.dart';
 import '../../utils/logger.dart';
+import 'video_edit/video_edit_screen.dart';
+import '../../services/video_delete/video_delete_service.dart';
 
 class ChapterScreen extends StatefulWidget {
   final Chapter chapter;
@@ -65,26 +67,26 @@ class _ChapterScreenState extends State<ChapterScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
+          SizedBox(
+            width: 120,
             child: Text(
-              key,
+              '$key:',
               textAlign: TextAlign.right,
               textDirection: TextDirection.rtl,
               style: const TextStyle(
                 fontFamily: 'IRANSansXFaNum',
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
-          const SizedBox(width: 8),
           Expanded(
-            flex: 7,
-            child: Text(
+            child: SelectableText(
               value,
               textAlign: TextAlign.right,
               textDirection: TextDirection.rtl,
-              style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+              style: const TextStyle(
+                fontFamily: 'IRANSansXFaNum',
+              ),
             ),
           ),
         ],
@@ -721,9 +723,11 @@ class _ChapterScreenState extends State<ChapterScreen> {
     }
   }
 
-  /// نمایش پاپ‌آپ جزئیات ویدیو (بدون WebView)
+  /// نمایش پاپ‌آپ جزئیات ویدیو با تمام فیلدها
   void _openVideoPopup(LessonVideo video) {
     final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+
+    Logger.info('📹 [VIDEO-DETAIL] نمایش جزئیات ویدیو ID: ${video.id}');
 
     showDialog(
       context: context,
@@ -741,25 +745,73 @@ class _ChapterScreenState extends State<ChapterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // اطلاعات پایه
                   _kv('شناسه ویدیو', video.id.toString()),
-                  _kv('درس', video.lessonTitle),  // ← استفاده مستقیم از video.lessonTitle
+                  _kv('شناسه فصل', video.chapterId.toString()),
+                  _kv('شماره فصل', video.chapterOrder.toString()),
+                  _kv('عنوان فصل', video.chapterTitle),
+                  _kv('شماره درس', video.lessonOrder.toString()),
+                  _kv('عنوان درس', video.lessonTitle),
                   _kv('استاد', teacherName),
+                  _kv('شناسه استاد', video.teacherId.toString()),
                   _kv('نوع محتوا', _getStyleName(video.style)),
                   _kv('وضعیت محتوا', video.contentStatus),
+                  _kv('فعال', video.active ? 'بله' : 'خیر'),
+                  
+                  // لینک‌ها
                   _kv(
                     'لینک آپارات',
                     video.aparatUrl.isNotEmpty ? video.aparatUrl : '-',
                   ),
-                  _kv('مدت زمان', _formatDuration(video.durationSec)),
-                  _kv(
-                    'تگ‌ها',
-                    video.tags.isNotEmpty ? video.tags.join(', ') : '-',
-                  ),
+                  
+                  // Embed HTML (کد کامل)
+                  if (video.embedHtml != null && video.embedHtml!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'کد Embed HTML:',
+                            style: TextStyle(
+                              fontFamily: 'IRANSansXFaNum',
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: SelectableText(
+                              video.embedHtml!,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  // PDF ها
                   if (video.notePdfUrl != null && video.notePdfUrl!.isNotEmpty)
                     _kv('لینک PDF جزوه', video.notePdfUrl!),
                   if (video.exercisePdfUrl != null &&
                       video.exercisePdfUrl!.isNotEmpty)
                     _kv('لینک PDF نمونه سوال', video.exercisePdfUrl!),
+                  
+                  // سایر اطلاعات
+                  _kv('مدت زمان', _formatDuration(video.durationSec)),
+                  _kv('تعداد بازدید', video.viewCount.toString()),
+                  _kv(
+                    'تگ‌ها',
+                    video.tags.isNotEmpty ? video.tags.join(', ') : '-',
+                  ),
+                  _kv('اجازه چرخش', video.allowLandscape ? 'بله' : 'خیر'),
                 ],
               ),
             ),
@@ -768,8 +820,20 @@ class _ChapterScreenState extends State<ChapterScreen> {
             // دکمه ویرایش (سبز)
             ElevatedButton(
               onPressed: () {
-                // TODO: افزودن منطق ویرایش در آینده
+                Logger.info('✏️ [VIDEO-DETAIL] باز کردن صفحه ویرایش برای ویدیو ID: ${video.id}');
                 Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => VideoEditScreen(video: video),
+                  ),
+                ).then((result) {
+                  // اگر ویرایش موفق بود، لیست را رفرش کن و teachers map را به‌روزرسانی کن
+                  if (result == true) {
+                    Logger.info('🔄 [VIDEO-DETAIL] رفرش لیست ویدیوها بعد از ویرایش');
+                    _loadTeachersMap(); // به‌روزرسانی لیست اساتید
+                    _load(); // رفرش لیست ویدیوها
+                  }
+                });
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
@@ -783,8 +847,9 @@ class _ChapterScreenState extends State<ChapterScreen> {
             // دکمه حذف (قرمز)
             ElevatedButton(
               onPressed: () {
-                // TODO: افزودن منطق حذف در آینده
+                Logger.info('🗑️ [VIDEO-DETAIL] باز کردن تایید حذف برای ویدیو ID: ${video.id}');
                 Navigator.of(context).pop();
+                _showDeleteConfirmation(video);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
@@ -799,5 +864,108 @@ class _ChapterScreenState extends State<ChapterScreen> {
         ),
       ),
     );
+  }
+
+  /// نمایش dialog تایید حذف ویدیو
+  void _showDeleteConfirmation(LessonVideo video) {
+    final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+    
+    Logger.info('🗑️ [VIDEO-DELETE] نمایش dialog تایید حذف برای ویدیو ID: ${video.id}');
+
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text(
+            'تایید حذف',
+            style: TextStyle(fontFamily: 'IRANSansXFaNum', color: Colors.red),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'آیا از حذف این ویدیو مطمئن هستید؟',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum', fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              _kv('عنوان درس', video.lessonTitle),
+              _kv('استاد', teacherName),
+              _kv('نوع', _getStyleName(video.style)),
+              const SizedBox(height: 8),
+              const Text(
+                '⚠️ این عمل غیرقابل بازگشت است!',
+                style: TextStyle(
+                  fontFamily: 'IRANSansXFaNum',
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Logger.info('❌ [VIDEO-DELETE] حذف لغو شد');
+              },
+              child: const Text(
+                'لغو',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _deleteVideo(video);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'حذف',
+                style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// حذف ویدیو
+  Future<void> _deleteVideo(LessonVideo video) async {
+    try {
+      Logger.info('🗑️ [VIDEO-DELETE] شروع حذف ویدیو ID: ${video.id}');
+
+      final service = VideoDeleteService();
+      await service.deleteVideo(lessonVideoId: video.id);
+
+      if (!mounted) return;
+
+      Logger.info('✅ [VIDEO-DELETE] ویدیو با موفقیت حذف شد');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ ویدیو با موفقیت حذف شد', textDirection: TextDirection.rtl),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // رفرش لیست ویدیوها
+      _load();
+    } catch (e) {
+      Logger.error('❌ [VIDEO-DELETE] خطا در حذف ویدیو', e);
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ خطا در حذف ویدیو: ${e.toString()}', textDirection: TextDirection.rtl),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
