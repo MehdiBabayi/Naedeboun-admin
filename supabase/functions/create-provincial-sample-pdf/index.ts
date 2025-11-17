@@ -1,176 +1,164 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+console.log('🎯 create-provincial-sample-pdf function loaded');
 
-interface ProvincialSamplePdfInput {
-  branch: string; // ابتدایی / متوسطه اول / متوسطه دوم
-  grade_name: string; // هفتم، هشتم، ...
+interface CreateProvincialSamplePdfInput {
   grade_id: number;
-  track_id?: number | null;
-  subject_name: string;
-  subject_id: number;
-  level: string; // ابتدایی / متوسط اول / متوسط دوم
-  title: string;
-  publish_year: number; // سال انتشار (شمسی)
-  has_answer_key: boolean; // آیا پاسخنامه دارد؟
-  designer: string; // طراح سوال
+  book_id: string;
+  pdf_title: string;
+  type: 'first_term' | 'second_term' | 'midterm_1' | 'midterm_2';
+  year?: number;
+  author: string;
+  has_answer?: boolean;
+  size?: number;
   pdf_url: string;
-  file_size_mb?: number | null;
-  page_count?: number | null;
   active?: boolean;
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
   try {
-    const input: ProvincialSamplePdfInput = await req.json();
-    
-    console.log('📄 [CREATE-PROVINCIAL] شروع با input:', JSON.stringify(input));
-
-    // Validation
-    if (!input.branch || !input.grade_name || !input.grade_id || 
-        !input.subject_name || !input.subject_id || 
-        !input.level || !input.title || 
-        !input.publish_year || !input.designer || !input.pdf_url) {
-      console.error('❌ [CREATE-PROVINCIAL] فیلدهای الزامی ناقص است');
-      return new Response(
-        JSON.stringify({ error: "فیلدهای الزامی: branch, grade_name, grade_id, subject_name, subject_id, level, title, publish_year, designer, pdf_url" }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // Validation level
-    const validLevels = ['ابتدایی', 'متوسط اول', 'متوسط دوم'];
-    if (!validLevels.includes(input.level)) {
-      console.error('❌ [CREATE-PROVINCIAL] level نامعتبر:', input.level);
-      return new Response(
-        JSON.stringify({ error: `level باید یکی از این مقادیر باشد: ${validLevels.join(', ')}` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Validation publish_year
-    if (input.publish_year < 1300 || input.publish_year > 1500) {
-      console.error('❌ [CREATE-PROVINCIAL] publish_year نامعتبر:', input.publish_year);
-      return new Response(
-        JSON.stringify({ error: 'publish_year باید بین 1300 تا 1500 باشد' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('❌ [CREATE-PROVINCIAL] ENV ناقص است');
-      return new Response(
-        JSON.stringify({ error: 'ENV ناقص است: SUPABASE_URL یا SUPABASE_SERVICE_ROLE_KEY تنظیم نشده' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    // بررسی وجود grade_id
-    const { data: gradeCheck, error: gradeCheckError } = await supabase
-      .from('grades')
-      .select('id')
-      .eq('id', input.grade_id)
-      .single();
-
-    if (gradeCheckError || !gradeCheck) {
-      console.error('❌ [CREATE-PROVINCIAL] grade_id یافت نشد:', gradeCheckError?.message);
-      return new Response(
-        JSON.stringify({ error: `grade_id ${input.grade_id} یافت نشد` }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // بررسی وجود subject_id
-    const { data: subjectCheck, error: subjectCheckError } = await supabase
-      .from('subjects')
-      .select('id')
-      .eq('id', input.subject_id)
-      .single();
-
-    if (subjectCheckError || !subjectCheck) {
-      console.error('❌ [CREATE-PROVINCIAL] subject_id یافت نشد:', subjectCheckError?.message);
-      return new Response(
-        JSON.stringify({ error: `subject_id ${input.subject_id} یافت نشد` }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // بررسی track_id (اگر ارائه شده)
-    if (input.track_id != null) {
-      const { data: trackCheck, error: trackCheckError } = await supabase
-        .from('tracks')
-        .select('id')
-        .eq('id', input.track_id)
-        .single();
-
-      if (trackCheckError || !trackCheck) {
-        console.error('❌ [CREATE-PROVINCIAL] track_id یافت نشد:', trackCheckError?.message);
-        return new Response(
-          JSON.stringify({ error: `track_id ${input.track_id} یافت نشد` }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+    // Initialize Supabase client
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       }
-    }
-
-    // ایجاد رکورد در provincial_sample_pdfs
-    const { data: pdfRecord, error: pdfError } = await supabase
-      .from('provincial_sample_pdfs')
-      .insert({
-        level: input.level,
-        grade_id: input.grade_id,
-        track_id: input.track_id || null,
-        subject_id: input.subject_id,
-        title: input.title,
-        publish_year: input.publish_year,
-        has_answer_key: input.has_answer_key !== false,
-        designer: input.designer,
-        pdf_url: input.pdf_url,
-        file_size_mb: input.file_size_mb || null,
-        page_count: input.page_count || null,
-        active: input.active !== false,
-      })
-      .select('id')
-      .single();
-
-    if (pdfError) {
-      console.error('❌ [CREATE-PROVINCIAL] خطا در ایجاد PDF:', pdfError.message);
-      throw new Error(`خطا در ایجاد PDF: ${pdfError.message}`);
-    }
-
-    console.log('✅ [CREATE-PROVINCIAL] PDF با موفقیت ایجاد شد، ID:', pdfRecord.id);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "نمونه سوال با موفقیت ایجاد شد",
-        data: {
-          provincial_sample_pdf_id: pdfRecord.id,
-          grade_id: input.grade_id,
-          subject_id: input.subject_id,
-        }
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error) {
-    console.error("❌ [CREATE-PROVINCIAL] Error:", error);
+    // Get request body
+    const {
+      grade_id,
+      book_id,
+      pdf_title,
+      type,
+      year,
+      author,
+      has_answer = false,
+      size,
+      pdf_url,
+      active = true,
+    }: CreateProvincialSamplePdfInput = await req.json();
+
+    console.log('📝 Creating provincial sample PDF:', {
+      grade_id,
+      book_id,
+      pdf_title,
+      type,
+      year,
+      author,
+      has_answer,
+      size,
+      pdf_url,
+      active,
+    });
+
+    // Validate required fields
+    if (!grade_id || !book_id || !pdf_title || !type || !author || !pdf_url) {
+      console.error('❌ Missing required fields');
+      return new Response(
+        JSON.stringify({
+          error: 'تمام فیلدهای الزامی باید وارد شوند',
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Validate type
+    if (!['first_term', 'second_term', 'midterm_1', 'midterm_2'].includes(type)) {
+      console.error('❌ Invalid type');
+      return new Response(
+        JSON.stringify({
+          error: 'نوع امتحان باید یکی از مقادیر معتبر باشد',
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Insert PDF
+    const { data: pdf, error: insertError } = await supabaseClient
+      .from('provincial_sample_pdfs')
+      .insert({
+        grade_id,
+        book_id,
+        pdf_title,
+        type,
+        year,
+        author,
+        has_answer,
+        size,
+        pdf_url,
+        active,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('❌ Insert error:', insertError);
+      return new Response(
+        JSON.stringify({
+          error: `خطا در ذخیره PDF: ${insertError.message}`,
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Increment change_count for provincial_sample_pdfs
+    const { error: changeCountError } = await supabaseClient.rpc('increment_change_count', {
+      table_name: 'provincial_sample_pdfs',
+      grade_id: grade_id,
+    });
+
+    if (changeCountError) {
+      console.error('❌ Change count error:', changeCountError);
+      // Don't fail the request for this, just log it
+    } else {
+      console.log('✅ Change count incremented for provincial_sample_pdfs');
+    }
+
+    console.log('✅ Provincial sample PDF created successfully:', pdf.id);
+
     return new Response(
-      JSON.stringify({ error: (error as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({
+        message: 'PDF نمونه سوال استانی با موفقیت ایجاد شد',
+        pdf_id: pdf.id,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (error) {
+    console.error('💥 Unexpected error:', error);
+    return new Response(
+      JSON.stringify({
+        error: 'خطای غیرمنتظره رخ داد',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
     );
   }
 });
-

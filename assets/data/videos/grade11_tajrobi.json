@@ -1,0 +1,34 @@
+{
+  "title": "یازدهم - تجربی",
+  "books": {
+    "1": {
+      "riazi": {
+        "title": "ریاضی",
+        "icon": "assets/images/icon-darsha/riazi1.png",
+        "cover": "assets/images/book-covers/grade11/tajrobi/riazi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: تابع"
+          },
+          "2": {
+            "title": "فصل 2: مثلثات"
+          }
+        }
+      }
+    },
+    "2": {
+      "zist": {
+        "title": "زیست",
+        "icon": "assets/images/icon-darsha/zist.png",
+        "cover": "assets/images/book-covers/grade11/tajrobi/zist.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: تنظیم عصبی"
+          }
+        }
+      }
+    }
+  }
+}

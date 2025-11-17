@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -43,6 +44,10 @@ class SmartImageCacheService {
     if (cached != null) {
       Logger.info('🔧 [IMG-CACHE] Book cover hit: ${key.hashCode}');
       return cached;
+    }
+
+    if (_isAssetPath(imageUrl)) {
+      return await _loadAssetBookCover(imageUrl, key);
     }
 
     Logger.info('⚠️ [IMG-CACHE] Book cover miss: ${key.hashCode}');
@@ -114,6 +119,23 @@ class SmartImageCacheService {
     return 'book_covers/url_${imageUrl.hashCode}';
   }
 
+  bool _isAssetPath(String imageUrl) {
+    return imageUrl.startsWith('assets/');
+  }
+
+  Future<Uint8List?> _loadAssetBookCover(String assetPath, String key) async {
+    try {
+      Logger.info('🖼️ [IMG-CACHE] Loading asset book cover: $assetPath');
+      final data = await rootBundle.load(assetPath);
+      final bytes = data.buffer.asUint8List();
+      await _box?.put(key, bytes);
+      return bytes;
+    } catch (e) {
+      Logger.error('❌ [IMG-CACHE] Asset book cover load failed', e);
+      return null;
+    }
+  }
+
   /// پیش‌دریافت Book Cover ها بر اساس لیست دروس (منتظر می‌ماند تا دانلود کامل شود)
   Future<void> prefetchBookCovers(List<Subject> subjects) async {
     Logger.info(
@@ -130,6 +152,8 @@ class SmartImageCacheService {
       
       if (cached != null) {
         Logger.info('✅ [IMG-CACHE] Book cover already cached: ${key.hashCode}');
+      } else if (_isAssetPath(url)) {
+        futures.add(_loadAssetBookCover(url, key));
       } else {
         // دانلود و منتظر ماندن تا کامل شود
         futures.add(_downloadBookCoverFromUrl(url, key));
@@ -173,6 +197,10 @@ class SmartImageCacheService {
     if (cached != null) {
       Logger.info('✅ [IMG-CACHE] Book cover already cached: ${key.hashCode}');
       return cached;
+    }
+    
+    if (_isAssetPath(imageUrl)) {
+      return await _loadAssetBookCover(imageUrl, key);
     }
     
     // 2. دانلود و منتظر ماندن تا کامل شود

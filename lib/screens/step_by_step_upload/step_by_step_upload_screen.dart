@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '../../utils/logger.dart';
-import '../../utils/grade_utils.dart';
 import '../../models/step_by_step_upload/step_by_step_upload_form_data.dart';
 import '../../services/step_by_step_upload/step_by_step_upload_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// صفحه آپلود گام‌به‌گام
 class StepByStepUploadScreen extends StatefulWidget {
@@ -19,71 +18,82 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
   final _service = StepByStepUploadService();
   bool _submitting = false;
 
-  // داده‌های Dropdown مطابق video_upload
-  final Map<String, List<String>> _gradesData = const {
-    'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
-    'متوسطه اول': ['هفتم', 'هشتم', 'نهم'],
-    'متوسطه دوم': ['دهم', 'یازدهم', 'دوازدهم'],
-  };
+  // Controllers برای حفظ مقادیر فیلدها هنگام scroll
+  late final TextEditingController _pdfTitleController = TextEditingController();
+  late final TextEditingController _authorController = TextEditingController();
+  late final TextEditingController _pdfUrlController = TextEditingController();
+  late final TextEditingController _sizeController = TextEditingController();
 
-  final List<String> _tracks = const ['بدون رشته', 'ریاضی', 'تجربی', 'انسانی'];
+  // Keys ثابت برای حفظ identity TextFormField ها هنگام rebuild
+  final _pdfTitleKey = GlobalKey();
+  final _authorKey = GlobalKey();
+  final _pdfUrlKey = GlobalKey();
+  final _sizeKey = GlobalKey();
 
-  final Map<String, String> _subjectOptions = const {
-    'ریاضی': 'riazi',
-    'علوم': 'olom',
-    'فارسی': 'farsi',
-    'قرآن': 'quran',
-    'مطالعات اجتماعی': 'motaleat',
-    'هدیه های آسمانی': 'hediye',
-    'نگارش': 'negaresh',
-    'عربی': 'arabi',
-    'انگلیسی': 'englisi',
-    'دینی': 'dini',
-    'فیزیک': 'fizik',
-    'شیمی': 'shimi',
-    'هندسه': 'hendese',
-    'هنر': 'honar',
-    'جغرافیا': 'joghrafia',
-    'فناوری': 'fanavari',
-    'تفکر و سبک زندگی': 'tafakor',
-    'حسابان': 'hesaban',
-    'زمین شناسی': 'zamin',
-    'محیط زیست': 'mohit',
-    'تاریخ': 'tarikh',
-    'سلامت و بهداشت': 'salamat',
-    'هویت اجتماعی': 'hoviat',
-    'مدیریت خانواده': 'modiriat',
-    'ریاضیات گسسته': 'gosaste',
-    'آمادگی دفاعی': 'amadegi',
-    'اقتصاد': 'eghtesad',
-    'علوم و فنون ادبی': 'fonon',
-    'جامعه شناسی': 'jameye',
-    'کارگاه کارآفرینی': 'kargah',
-    'منطق': 'mantegh',
-    'فلسفه': 'falsafe',
-    'روانشناسی': 'ravanshenasi',
-    'زیست شناسی': 'zist',
-  };
+  // داده‌های dropdown از JSON
+  Map<String, dynamic>? _gradesJson;
+  Map<String, dynamic>? _currentGradeData;
+  List<String> _gradeOptions = [];
+  List<String> _subjectOptions = [];
+  Map<String, String> _subjectSlugs = {};
 
-  // نگاشت نام درس به ID (از دیتابیس)
-  final Map<String, int> _subjectNameToId = {
-    'ریاضی': 1,
-    'علوم': 2,
-    'فارسی': 3,
-    'قرآن': 4,
-    'مطالعات اجتماعی': 5,
-    'هدیه های آسمانی': 6,
-    'نگارش': 7,
-    'عربی': 9,
-    'انگلیسی': 10,
-    'دینی': 14,
-  };
+  @override
+  void initState() {
+    super.initState();
+    _loadGradesJson();
+    // تنظیم مقادیر اولیه از _form
+    _pdfTitleController.text = _form.pdfTitle ?? '';
+    _authorController.text = _form.author ?? '';
+    _pdfUrlController.text = _form.pdfUrl ?? '';
+    _sizeController.text = _form.size?.toString() ?? '';
+
+    // تنظیم مقدار پیش‌فرض برای active
+    _form.active = _form.active;
+  }
+
+  @override
+  void dispose() {
+    _pdfTitleController.dispose();
+    _authorController.dispose();
+    _pdfUrlController.dispose();
+    _sizeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadGradesJson() async {
+    try {
+      final gradesData = await DefaultAssetBundle.of(context).loadString('assets/data/grades.json');
+      _gradesJson = json.decode(gradesData);
+      _gradeOptions = _gradesJson!.keys.map((k) => k.toString()).toList()..sort();
+      setState(() {});
+    } catch (e) {
+      Logger.error('Failed to load grades.json', e);
+    }
+  }
+
+  void _onGradeChanged(int gradeId) {
+    if (_gradesJson == null) return;
+
+    final gradeKey = gradeId.toString();
+    _currentGradeData = _gradesJson![gradeKey];
+    if (_currentGradeData != null && _currentGradeData!['books'] != null) {
+      final books = _currentGradeData!['books'] as Map<String, dynamic>;
+      _subjectOptions = books.keys.map((k) => books[k]['title'] as String).toList();
+      _subjectSlugs = books.map((k, v) => MapEntry(v['title'] as String, k));
+    } else {
+      _subjectOptions = [];
+      _subjectSlugs = {};
+    }
+    setState(() {});
+  }
+
+  void _onSubjectChanged(String subjectName) {
+    final bookId = _subjectSlugs[subjectName];
+    _form.bookId = bookId;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isHighSchool = _form.branch == 'متوسطه دوم';
-    final grades = _gradesData[_form.branch ?? ''] ?? <String>[];
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -105,75 +115,82 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            cacheExtent: 1000, // برای حفظ widgets هنگام scroll
             children: [
-              // 1) شاخه (هم محدود کننده پایه و هم برای دیتابیس)
-              _buildDropdown<String>(
-                label: 'شاخه',
-                value: _form.branch,
-                items: const ['ابتدایی', 'متوسطه اول', 'متوسطه دوم'],
-                onChanged: (v) {
-                  setState(() {
-                    _form.branch = v;
-                    _form.grade = null;
-                    _form.track = 'بدون رشته';
-                  });
+              // 1) پایه
+              _buildDropdown<int>(
+                label: 'پایه',
+                value: _form.gradeId,
+                items: _gradeOptions.map((g) => int.parse(g)).toList(),
+                itemLabels: _gradeOptions,
+                onChanged: (gradeId) {
+                  if (gradeId != null) {
+                    setState(() {
+                      _form.gradeId = gradeId;
+                      _form.bookId = null;
+                      _onGradeChanged(gradeId);
+                    });
+                  }
                 },
               ),
 
-              // 2) پایه (وابسته به شاخه)
-              _buildDropdown<String>(
-                label: 'پایه',
-                value: _form.grade,
-                items: grades,
-                onChanged: (v) => setState(() => _form.grade = v),
-                hint: grades.isEmpty ? 'ابتدا شاخه را انتخاب کنید' : null,
-              ),
-
-              // 3) رشته (فقط برای متوسطه دوم)
-              if (isHighSchool)
-                _buildDropdown<String>(
-                  label: 'رشته',
-                  value: _form.track ?? 'بدون رشته',
-                  items: _tracks,
-                  onChanged: (v) => setState(() => _form.track = v),
-                ),
-
-              // 4) درس
+              // 2) درس (وابسته به پایه)
               _buildDropdown<String>(
                 label: 'درس',
-                value: _form.subject,
-                items: _subjectOptions.keys.toList(),
-                onChanged: (v) => setState(() => _form.subject = v),
+                value: _subjectOptions.isNotEmpty ? _subjectOptions.firstWhere(
+                  (s) => _subjectSlugs[s] == _form.bookId,
+                  orElse: () => '',
+                ) : null,
+                items: _subjectOptions,
+                onChanged: (subjectName) {
+                  if (subjectName != null) {
+                    _onSubjectChanged(subjectName);
+                  }
+                },
+                hint: _subjectOptions.isEmpty ? 'ابتدا پایه را انتخاب کنید' : null,
               ),
 
-              // 5) عنوان
+              // 3) عنوان PDF
               _buildTextField(
-                label: 'عنوان',
-                onSaved: (v) => _form.title = v,
+                label: 'عنوان PDF',
+                controller: _pdfTitleController,
+                onSaved: (v) => _form.pdfTitle = v?.trim(),
+                onChanged: (v) => _form.pdfTitle = v?.trim(),
+                fieldKey: _pdfTitleKey,
                 hint: 'مثال: گام به گام ریاضی - فصل اول',
                 maxLength: 200,
               ),
 
-              // 7) لینک PDF
+              // 4) نویسنده
+              _buildTextField(
+                label: 'نویسنده',
+                controller: _authorController,
+                onSaved: (v) => _form.author = v?.trim(),
+                onChanged: (v) => _form.author = v?.trim(),
+                fieldKey: _authorKey,
+                hint: 'نام نویسنده یا مؤلف',
+                maxLength: 100,
+              ),
+
+              // 5) لینک PDF
               _buildTextField(
                 label: 'لینک PDF',
-                onSaved: (v) => _form.pdfUrl = v,
+                controller: _pdfUrlController,
+                onSaved: (v) => _form.pdfUrl = v?.trim(),
+                onChanged: (v) => _form.pdfUrl = v?.trim(),
+                fieldKey: _pdfUrlKey,
                 hint: 'https://...',
                 maxLength: 500,
               ),
 
-              // 8) حجم فایل (اختیاری)
+              // 6) حجم فایل (اختیاری)
               _buildDoubleField(
                 label: 'حجم فایل (مگابایت) - اختیاری',
-                onSaved: (v) => _form.fileSizeMb = v,
+                controller: _sizeController,
+                onSaved: (v) => _form.size = v,
+                onChanged: (v) => _form.size = v,
+                fieldKey: _sizeKey,
                 hint: 'مثال: 2.5',
-              ),
-
-              // 9) تعداد صفحات (اختیاری)
-              _buildIntField(
-                label: 'تعداد صفحات - اختیاری',
-                onSaved: (v) => _form.pageCount = v,
-                hint: 'مثال: 25',
               ),
 
               // 10) فعال/غیرفعال
@@ -216,67 +233,7 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
     );
   }
 
-  // Dropdown عمومی RTL
-  Widget _buildDropdown<T>({
-    required String label,
-    required T? value,
-    required List<T> items,
-    required void Function(T?) onChanged,
-    String? hint,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: DropdownButtonFormField<T>(
-          value: items.contains(value) ? value : null,
-          items: items
-              .map((e) => DropdownMenuItem<T>(
-                    value: e,
-                    child: Text('$e', style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
-                  ))
-              .toList(),
-          onChanged: (v) {
-            setState(() {
-              onChanged(v);
-            });
-          },
-          decoration: InputDecoration(
-            labelText: label,
-            hintText: hint,
-            labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
-            border: const OutlineInputBorder(),
-          ),
-          isExpanded: true,
-        ),
-      ),
-    );
-  }
 
-  // فیلد متنی RTL
-  Widget _buildTextField({
-    required String label,
-    required void Function(String?) onSaved,
-    String? hint,
-    int? maxLength,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: TextFormField(
-        maxLength: maxLength,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
-          border: const OutlineInputBorder(),
-          counterText: '',
-        ),
-        textDirection: TextDirection.rtl,
-        textAlign: TextAlign.right,
-        onSaved: onSaved,
-      ),
-    );
-  }
 
   // فیلد عددی برای int
   Widget _buildIntField({
@@ -311,11 +268,16 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
   Widget _buildDoubleField({
     required String label,
     required void Function(double?) onSaved,
+    void Function(double?)? onChanged,
+    TextEditingController? controller,
+    Key? fieldKey,
     String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -332,6 +294,92 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
           }
           onSaved(double.tryParse(v.trim()));
         },
+        onChanged: (value) {
+          // همگام‌سازی با form هنگام تایپ (برای جلوگیری از پاک شدن هنگام scroll)
+          final doubleValue = value.trim().isEmpty ? null : double.tryParse(value.trim());
+          if (onChanged != null) {
+            onChanged(doubleValue);
+          } else {
+            onSaved(doubleValue);
+          }
+        },
+      ),
+    );
+  }
+
+  // فیلد متنی ساده با controller و onChanged
+  Widget _buildTextField({
+    required String label,
+    TextEditingController? controller,
+    void Function(String?)? onSaved,
+    void Function(String?)? onChanged,
+    Key? fieldKey,
+    String? hint,
+    int? maxLength,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: TextFormField(
+        key: fieldKey,
+        controller: controller,
+        maxLength: maxLength,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+          border: const OutlineInputBorder(),
+          counterText: '',
+        ),
+        textDirection: TextDirection.rtl,
+        textAlign: TextAlign.right,
+        onSaved: onSaved,
+        onChanged: onChanged ?? (value) {
+          // همگام‌سازی با form هنگام تایپ (برای جلوگیری از پاک شدن هنگام scroll)
+          onSaved?.call(value);
+        },
+      ),
+    );
+  }
+
+  // Dropdown عمومی RTL با پشتیبانی از itemLabels
+  Widget _buildDropdown<T>({
+    required String label,
+    required T? value,
+    required List<T> items,
+    List<String>? itemLabels,
+    required void Function(T?) onChanged,
+    String? hint,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: DropdownButtonFormField<T>(
+          value: items.contains(value) ? value : null,
+          items: items
+              .asMap()
+              .entries
+              .map((entry) => DropdownMenuItem<T>(
+                    value: entry.value,
+                    child: Text(
+                      itemLabels != null && entry.key < itemLabels.length
+                          ? itemLabels[entry.key]
+                          : entry.value.toString(),
+                      style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+                    ),
+                  ))
+              .toList(),
+          onChanged: (v) {
+            onChanged(v);
+          },
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+            border: const OutlineInputBorder(),
+          ),
+          isExpanded: true,
+        ),
       ),
     );
   }
@@ -349,56 +397,18 @@ class _StepByStepUploadScreenState extends State<StepByStepUploadScreen> {
 
     setState(() => _submitting = true);
     try {
-      // تبدیل نام پایه به grade_id
-      final gradeName = _form.grade!;
-      final gradeId = mapGradeStringToInt(gradeName);
-      if (gradeId == null) {
-        throw Exception('خطا در تبدیل نام پایه به ID');
-      }
-
-      // تبدیل نام رشته به track_id
-      int? trackId;
-      final trackName = _form.track;
-      if (trackName != null && trackName != 'بدون رشته') {
-        final supabase = Supabase.instance.client;
-        final tracks = await supabase
-            .from('tracks')
-            .select('id')
-            .eq('name', trackName)
-            .limit(1);
-        if (tracks.isNotEmpty) {
-          trackId = (tracks.first as Map<String, dynamic>)['id'] as int;
-        }
-      }
-
-      // تبدیل نام درس به subject_id
-      final subjectId = _subjectNameToId[_form.subject];
-      if (subjectId == null) {
-        throw Exception('خطا: درس انتخابی در لیست موجود نیست');
-      }
-
-      // تبدیل branch به level برای دیتابیس
-      final levelForDb = _form.levelForDatabase;
-      if (levelForDb == null) {
-        throw Exception('خطا در تبدیل شاخه به مقطع');
-      }
-
       final payload = {
-        'branch': _form.branch,
-        'grade_name': gradeName,
-        'grade_id': gradeId,
-        'track_id': trackId,
-        'subject_name': _form.subject,
-        'subject_id': subjectId,
-        'level': levelForDb,
-        'title': _form.title,
+        'grade_id': _form.gradeId,
+        'book_id': _form.bookId,
+        'pdf_title': _form.pdfTitle,
+        'author': _form.author,
+        'size': _form.size,
         'pdf_url': _form.pdfUrl,
-        'file_size_mb': _form.fileSizeMb,
-        'page_count': _form.pageCount,
         'active': _form.active,
       };
 
-      Logger.info('📤 [STEP-BY-STEP-UPLOAD] ارسال با payload: $payload');
+      Logger.info('📤 [STEP-BY-STEP-UPLOAD] ارسال به سرور: $payload');
+
       await _service.uploadStepByStep(payload: payload);
 
       if (!mounted) return;

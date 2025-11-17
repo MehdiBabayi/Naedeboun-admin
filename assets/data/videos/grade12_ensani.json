@@ -1,0 +1,34 @@
+{
+  "title": "دوازدهم - انسانی",
+  "books": {
+    "1": {
+      "farsi": {
+        "title": "فارسی",
+        "icon": "assets/images/icon-darsha/farsi.png",
+        "cover": "assets/images/book-covers/grade12/ensani/farsi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: خواندن و نوشتن"
+          },
+          "2": {
+            "title": "فصل 2: دستور زبان"
+          }
+        }
+      }
+    },
+    "2": {
+      "fonon": {
+        "title": "علوم و فنون ادبی",
+        "icon": "assets/images/icon-darsha/olomofonon.png",
+        "cover": "assets/images/book-covers/grade12/ensani/fonon.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: تاریخ ادبیات"
+          }
+        }
+      }
+    }
+  }
+}

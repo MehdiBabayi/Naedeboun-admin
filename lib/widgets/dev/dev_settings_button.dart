@@ -8,9 +8,7 @@ import '../../models/auth/registration_stage.dart';
 import '../../services/session_service.dart';
 import '../../services/cache/hive_cache_service.dart';
 import '../../services/cache/cache_manager.dart';
-import '../../services/mini_request/mini_request_service.dart';
-import '../../services/content/cached_content_service.dart';
-import '../../services/image_cache/smart_image_cache_service.dart';
+// Mini-Request و کش Hive در نسخه جدید پنل ادمین استفاده نمی‌شوند
 import '../../utils/logger.dart';
 
 /// دکمه تنظیمات موقت برای حالت توسعه
@@ -463,159 +461,33 @@ class _DevSettingsDialogState extends State<DevSettingsDialog> {
     }
   }
 
-  /// دانلود دستی همهٔ دیتاها و ذخیره در Hive (Subjects→Chapters→Lessons→Videos + PDFs + Banners + Teachers + BookCovers + Profile)
+  /// دانلود دستی همهٔ دیتاها و ذخیره در Hive (در نسخهٔ جدید ادمین غیرفعال شده)
   Future<void> _runFullManualDownload(BuildContext context) async {
-    try {
-      Logger.info('🚀 [DEV] Full manual download triggered');
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('در حال دانلود همهٔ دیتاها...'),
-            ],
+    // در پنل ادمین جدید Mini‑Request و ذخیره در Hive کاملاً حذف شده است.
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'ℹ️ Mini‑Request در پنل ادمین غیرفعال شده است و دانلود سراسری انجام نمی‌شود',
+            textDirection: TextDirection.rtl,
           ),
         ),
       );
-
-      final appState = Provider.of<AppStateManager>(context, listen: false);
-      final profile = appState.authService.currentProfile;
-      if (profile?.grade == null) {
-        if (context.mounted) Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('⚠️ پایهٔ کاربر نامشخص است')),
-        );
-        return;
-      }
-
-      final grade = profile!.grade!;
-      final int? track = null; // در صورت نیاز: نگاشت رشته
-
-      // اگر ذخیره مستقیم پروفایل نیاز است و متدی وجود ندارد، از همین عبور می‌کنیم؛
-      // پروفایل از قبل در SessionService نگه‌داری می‌شود.
-
-      // Mini‑Request برای متادیتاها (PDFs/Banners/Teachers/BookCovers)
-      await MiniRequestService.instance.checkForUpdates(
-        gradeId: grade,
-        trackId: track,
-        force: true,
-      );
-
-      // Subjects + در صورت خالی بودن، fallback ذخیره در Hive
-      final subjects = await CachedContentService.getSubjectsForUser(
-        gradeId: grade,
-        trackId: track,
-      );
-
-      for (final s in subjects) {
-        final offerId =
-            s.subjectOfferId ??
-            await CachedContentService.getSubjectOfferId(
-              subjectId: s.id,
-              gradeId: grade,
-              trackId: track,
-            );
-        if (offerId == null) continue;
-        final chapters = await CachedContentService.getChapters(
-          offerId,
-          gradeId: grade,
-          trackId: track,
-        );
-        // ✅ تغییر: حذف حلقه lessons، مستقیماً از chapters استفاده می‌کنیم
-        for (final ch in chapters) {
-          // ✅ تغییر: مستقیماً getLessonVideos را صدا می‌زنیم
-          await CachedContentService.getLessonVideos(
-            ch.id,  // ← تغییر از lesson.id به chapter.id
-            gradeId: grade,
-            trackId: track,
-          );
-        }
-      }
-
-      if (context.mounted) Navigator.of(context).pop();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ همهٔ دیتاها در Hive ذخیره شد')),
-        );
-        Logger.info('✅ [DEV] Full manual download completed');
-      }
-    } catch (e) {
-      if (context.mounted) Navigator.of(context).pop();
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(
-          SnackBar(content: Text('❌ خطا در دانلود همه دیتاها: $e')),
-        );
-      }
-      Logger.error('❌ [DEV] Full manual download error', e);
     }
   }
 
-  /// پاک کردن دیتای Mini‑Request برای پایه/رشته فعلی + کش‌های عمومی
+  /// پاک کردن دیتای Mini‑Request برای پایه/رشته فعلی + کش‌های عمومی (در نسخهٔ جدید ادمین عملاً کاری انجام نمی‌دهد)
   Future<void> _clearAllMiniRequestData(BuildContext context) async {
-    try {
-      Logger.info('🧹 [DEV] Clear Mini‑Request data triggered');
-      final appState = context.read<AppStateManager>();
-      final profile = appState.authService.currentProfile;
-      if (profile?.grade == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('⚠️ پایهٔ کاربر نامشخص است')),
-        );
-        return;
-      }
-      final grade = profile!.grade!;
-      final int? track = null;
-
-      final mrBoxName = 'grade_${grade}_${track ?? "null"}_content';
-      final mrBox = Hive.isBoxOpen(mrBoxName)
-          ? Hive.box(mrBoxName)
-          : await Hive.openBox(mrBoxName);
-      final beforeMr = mrBox.length;
-      await mrBox.clear();
-
-      final appCache = Hive.isBoxOpen('app_cache')
-          ? Hive.box('app_cache')
-          : await Hive.openBox('app_cache');
-      final beforeCache = appCache.length;
-      await appCache.clear();
-
-      // پاک کردن کش تصاویر Hive
-      await SmartImageCacheService.instance.clearAll();
-
-      // پاک کردن memory cache تصاویر Flutter (به صورت ایمن)
-      try {
-        // Clear non-live images only (clearLiveImages() is for camera frames)
-        imageCache.clear();
-        // تنظیم مجدد cache size برای جلوگیری از buffer overflow
-        imageCache.maximumSize = 1000; // محدود کردن تعداد تصاویر در cache
-        imageCache.maximumSizeBytes = 150 << 20; // 150 MB
-      } catch (e) {
-        Logger.error('⚠️ [DEV] Error clearing image cache', e);
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+    // در پنل ادمین دیگر Mini‑Request و Boxهای Hive مرتبط استفاده نمی‌شوند.
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           content: Text(
-            '🧹 پاک شد: $mrBoxName=$beforeMr ، app_cache=$beforeCache',
+            'ℹ️ Mini‑Request دیگر استفاده نمی‌شود؛ دیتای خاصی برای پاک‌سازی وجود ندارد',
+            textDirection: TextDirection.rtl,
           ),
         ),
-        );
-      }
-      Logger.info(
-        '✅ [DEV] Cleared $mrBoxName ($beforeMr items), app_cache ($beforeCache items), Hive image cache, and Flutter memory cache',
       );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('❌ خطا در پاک‌سازی: $e')));
-      }
-      Logger.error('❌ [DEV] Clear Mini‑Request data error', e);
     }
   }
 

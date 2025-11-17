@@ -1,92 +1,124 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '../../utils/logger.dart';
-import '../../utils/grade_utils.dart';
 import '../../models/provincial_sample_upload/provincial_sample_upload_form_data.dart';
 import '../../services/provincial_sample_upload/provincial_sample_upload_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// صفحه آپلود نمونه سوال استانی
 class ProvincialSampleUploadScreen extends StatefulWidget {
   const ProvincialSampleUploadScreen({super.key});
 
   @override
-  State<ProvincialSampleUploadScreen> createState() => _ProvincialSampleUploadScreenState();
+  State<ProvincialSampleUploadScreen> createState() =>
+      _ProvincialSampleUploadScreenState();
 }
 
-class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScreen> {
+class _ProvincialSampleUploadScreenState
+    extends State<ProvincialSampleUploadScreen> {
   final _formKey = GlobalKey<FormState>();
   final _form = ProvincialSampleUploadFormData();
   final _service = ProvincialSampleUploadService();
   bool _submitting = false;
 
-  // داده‌های Dropdown مطابق video_upload
-  final Map<String, List<String>> _gradesData = const {
-    'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
-    'متوسطه اول': ['هفتم', 'هشتم', 'نهم'],
-    'متوسطه دوم': ['دهم', 'یازدهم', 'دوازدهم'],
+  // Controllers برای حفظ مقادیر فیلدها هنگام scroll
+  late final TextEditingController _pdfTitleController =
+      TextEditingController();
+  late final TextEditingController _authorController = TextEditingController();
+  late final TextEditingController _yearController = TextEditingController();
+  late final TextEditingController _pdfUrlController = TextEditingController();
+  late final TextEditingController _sizeController = TextEditingController();
+
+  // Keys ثابت برای حفظ identity TextFormField ها هنگام rebuild
+  final _pdfTitleKey = GlobalKey();
+  final _authorKey = GlobalKey();
+  final _yearKey = GlobalKey();
+  final _pdfUrlKey = GlobalKey();
+  final _sizeKey = GlobalKey();
+
+  // داده‌های dropdown از JSON
+  Map<String, dynamic>? _gradesJson;
+  Map<String, dynamic>? _currentGradeData;
+  List<String> _gradeOptions = [];
+  List<String> _subjectOptions = [];
+  Map<String, String> _subjectSlugs = {};
+
+  // نوع امتحان‌ها
+  final List<String> _examTypes = [
+    'first_term',
+    'second_term',
+    'midterm_1',
+    'midterm_2'
+  ];
+  final Map<String, String> _examTypeLabels = {
+    'first_term': 'نوبت اول',
+    'second_term': 'نوبت دوم',
+    'midterm_1': 'میان‌ترم اول',
+    'midterm_2': 'میان‌ترم دوم',
   };
 
-  final List<String> _tracks = const ['بدون رشته', 'ریاضی', 'تجربی', 'انسانی'];
+  @override
+  void initState() {
+    super.initState();
+    _loadGradesJson();
+    // تنظیم مقادیر اولیه از _form
+    _pdfTitleController.text = _form.pdfTitle ?? '';
+    _authorController.text = _form.author ?? '';
+    _yearController.text = _form.year?.toString() ?? '';
+    _pdfUrlController.text = _form.pdfUrl ?? '';
+    _sizeController.text = _form.size?.toString() ?? '';
 
-  final Map<String, String> _subjectOptions = const {
-    'ریاضی': 'riazi',
-    'علوم': 'olom',
-    'فارسی': 'farsi',
-    'قرآن': 'quran',
-    'مطالعات اجتماعی': 'motaleat',
-    'هدیه های آسمانی': 'hediye',
-    'نگارش': 'negaresh',
-    'عربی': 'arabi',
-    'انگلیسی': 'englisi',
-    'دینی': 'dini',
-    'فیزیک': 'fizik',
-    'شیمی': 'shimi',
-    'هندسه': 'hendese',
-    'هنر': 'honar',
-    'جغرافیا': 'joghrafia',
-    'فناوری': 'fanavari',
-    'تفکر و سبک زندگی': 'tafakor',
-    'حسابان': 'hesaban',
-    'زمین شناسی': 'zamin',
-    'محیط زیست': 'mohit',
-    'تاریخ': 'tarikh',
-    'سلامت و بهداشت': 'salamat',
-    'هویت اجتماعی': 'hoviat',
-    'مدیریت خانواده': 'modiriat',
-    'ریاضیات گسسته': 'gosaste',
-    'آمادگی دفاعی': 'amadegi',
-    'اقتصاد': 'eghtesad',
-    'علوم و فنون ادبی': 'fonon',
-    'جامعه شناسی': 'jameye',
-    'کارگاه کارآفرینی': 'kargah',
-    'منطق': 'mantegh',
-    'فلسفه': 'falsafe',
-    'روانشناسی': 'ravanshenasi',
-    'زیست شناسی': 'zist',
-  };
+    // تنظیم مقدار پیش‌فرض برای active
+    _form.active = _form.active;
+  }
 
-  // نگاشت نام درس به ID
-  final Map<String, int> _subjectNameToId = {
-    'ریاضی': 1,
-    'علوم': 2,
-    'فارسی': 3,
-    'قرآن': 4,
-    'مطالعات اجتماعی': 5,
-    'هدیه های آسمانی': 6,
-    'نگارش': 7,
-    'عربی': 9,
-    'انگلیسی': 10,
-    'دینی': 14,
-  };
+  @override
+  void dispose() {
+    _pdfTitleController.dispose();
+    _authorController.dispose();
+    _yearController.dispose();
+    _pdfUrlController.dispose();
+    _sizeController.dispose();
+    super.dispose();
+  }
 
-  // لیست سال‌های ممکن (1400 تا 1405)
-  final List<int> _publishYears = List.generate(6, (i) => 1400 + i);
+  Future<void> _loadGradesJson() async {
+    try {
+      final gradesData = await DefaultAssetBundle.of(context)
+          .loadString('assets/data/grades.json');
+      _gradesJson = json.decode(gradesData);
+      _gradeOptions =
+          _gradesJson!.keys.map((k) => k.toString()).toList()..sort();
+      setState(() {});
+    } catch (e) {
+      Logger.error('Failed to load grades.json', e);
+    }
+  }
+
+  void _onGradeChanged(int gradeId) {
+    if (_gradesJson == null) return;
+
+    final gradeKey = gradeId.toString();
+    _currentGradeData = _gradesJson![gradeKey];
+    if (_currentGradeData != null && _currentGradeData!['books'] != null) {
+      final books = _currentGradeData!['books'] as Map<String, dynamic>;
+      _subjectOptions =
+          books.keys.map((k) => books[k]['title'] as String).toList();
+      _subjectSlugs =
+          books.map((k, v) => MapEntry(v['title'] as String, k));
+    } else {
+      _subjectOptions = [];
+      _subjectSlugs = {};
+    }
+    setState(() {});
+  }
+
+  void _onSubjectChanged(String subjectName) {
+    final bookId = _subjectSlugs[subjectName];
+    _form.bookId = bookId;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isHighSchool = _form.branch == 'متوسطه دوم';
-    final grades = _gradesData[_form.branch ?? ''] ?? <String>[];
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -107,114 +139,132 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
         body: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            cacheExtent: 1000,
             children: [
-              // 1) شاخه (هم محدود کننده پایه و هم برای دیتابیس)
-              _buildDropdown<String>(
-                label: 'شاخه',
-                value: _form.branch,
-                items: const ['ابتدایی', 'متوسطه اول', 'متوسطه دوم'],
-                onChanged: (v) {
-                  setState(() {
-                    _form.branch = v;
-                    _form.grade = null;
-                    _form.track = 'بدون رشته';
-                  });
+              // 1) پایه
+              _buildDropdown<int>(
+                label: 'پایه',
+                value: _form.gradeId,
+                items: _gradeOptions.map((g) => int.parse(g)).toList(),
+                itemLabels: _gradeOptions,
+                onChanged: (gradeId) {
+                  if (gradeId != null) {
+                    setState(() {
+                      _form.gradeId = gradeId;
+                      _form.bookId = null;
+                      _onGradeChanged(gradeId);
+                    });
+                  }
                 },
               ),
 
-              // 2) پایه (وابسته به شاخه)
-              _buildDropdown<String>(
-                label: 'پایه',
-                value: _form.grade,
-                items: grades,
-                onChanged: (v) => setState(() => _form.grade = v),
-                hint: grades.isEmpty ? 'ابتدا شاخه را انتخاب کنید' : null,
-              ),
-
-              // 3) رشته (فقط برای متوسطه دوم)
-              if (isHighSchool)
-                _buildDropdown<String>(
-                  label: 'رشته',
-                  value: _form.track ?? 'بدون رشته',
-                  items: _tracks,
-                  onChanged: (v) => setState(() => _form.track = v),
-                ),
-
-              // 4) درس
+              // 2) درس (وابسته به پایه)
               _buildDropdown<String>(
                 label: 'درس',
-                value: _form.subject,
-                items: _subjectOptions.keys.toList(),
-                onChanged: (v) => setState(() => _form.subject = v),
+                value: _subjectOptions.isNotEmpty
+                    ? _subjectOptions.firstWhere(
+                        (s) => _subjectSlugs[s] == _form.bookId,
+                        orElse: () => '',
+                      )
+                    : null,
+                items: _subjectOptions,
+                onChanged: (subjectName) {
+                  if (subjectName != null) {
+                    _onSubjectChanged(subjectName);
+                  }
+                },
+                hint: _subjectOptions.isEmpty
+                    ? 'ابتدا پایه را انتخاب کنید'
+                    : null,
               ),
 
-              // 5) عنوان
+              // 3) نوع امتحان
+              _buildDropdown<String>(
+                label: 'نوع امتحان',
+                value: _form.type,
+                items: _examTypes,
+                itemLabels:
+                    _examTypes.map((e) => _examTypeLabels[e]!).toList(),
+                onChanged: (v) => setState(() => _form.type = v),
+              ),
+
+              // 4) عنوان PDF
               _buildTextField(
-                label: 'عنوان',
-                onSaved: (v) => _form.title = v,
-                hint: 'مثال: نمونه سوال ریاضی - نوبت اول',
+                label: 'عنوان PDF',
+                controller: _pdfTitleController,
+                onSaved: (v) => _form.pdfTitle = v?.trim(),
+                onChanged: (v) => _form.pdfTitle = v?.trim(),
+                fieldKey: _pdfTitleKey,
+                hint: 'مثال: نمونه سوال نوبت اول ریاضی',
                 maxLength: 200,
               ),
 
-              // 7) سال انتشار
-              _buildDropdown<int>(
-                label: 'سال انتشار (شمسی)',
-                value: _form.publishYear,
-                items: _publishYears,
-                onChanged: (v) => setState(() => _form.publishYear = v),
+              // 5) سال برگزاری
+              _buildIntField(
+                label: 'سال برگزاری (شمسی)',
+                controller: _yearController,
+                onSaved: (v) => _form.year = v,
+                onChanged: (v) => _form.year = v,
+                fieldKey: _yearKey,
+                hint: 'مثال: 1402',
               ),
 
-              // 8) پاسخنامه دارد
+              // 6) نویسنده/طراح
+              _buildTextField(
+                label: 'نویسنده/طراح',
+                controller: _authorController,
+                onSaved: (v) => _form.author = v?.trim(),
+                onChanged: (v) => _form.author = v?.trim(),
+                fieldKey: _authorKey,
+                hint: 'مثال: استاد بابایی',
+                maxLength: 100,
+              ),
+
+              // 7) آیا پاسخنامه دارد؟
               Row(
                 children: [
                   Checkbox(
-                    value: _form.hasAnswerKey,
-                    onChanged: (v) => setState(() => _form.hasAnswerKey = v ?? false),
+                    value: _form.hasAnswer,
+                    onChanged: (v) =>
+                        setState(() => _form.hasAnswer = v ?? false),
                   ),
                   const Text(
-                    'پاسخنامه دارد',
+                    'دارای پاسخنامه',
                     style: TextStyle(fontFamily: 'IRANSansXFaNum'),
                   ),
                 ],
               ),
 
-              // 9) طراح سوال
-              _buildTextField(
-                label: 'طراح سوال',
-                onSaved: (v) => _form.designer = v,
-                hint: 'مثال: استاد بابایی / هماهنگی کشوری',
-                maxLength: 100,
-              ),
-
-              // 10) لینک PDF
+              // 8) لینک PDF
               _buildTextField(
                 label: 'لینک PDF',
-                onSaved: (v) => _form.pdfUrl = v,
+                controller: _pdfUrlController,
+                onSaved: (v) => _form.pdfUrl = v?.trim(),
+                onChanged: (v) => _form.pdfUrl = v?.trim(),
+                fieldKey: _pdfUrlKey,
                 hint: 'https://...',
                 maxLength: 500,
               ),
 
-              // 11) حجم فایل (اختیاری)
+              // 9) حجم فایل (اختیاری)
               _buildDoubleField(
                 label: 'حجم فایل (مگابایت) - اختیاری',
-                onSaved: (v) => _form.fileSizeMb = v,
-                hint: 'مثال: 2.5',
+                controller: _sizeController,
+                onSaved: (v) => _form.size = v,
+                onChanged: (v) => _form.size = v,
+                fieldKey: _sizeKey,
+                hint: 'مثال: 3.2',
               ),
 
-              // 12) تعداد صفحات (اختیاری)
-              _buildIntField(
-                label: 'تعداد صفحات - اختیاری',
-                onSaved: (v) => _form.pageCount = v,
-                hint: 'مثال: 25',
-              ),
-
-              // 13) فعال/غیرفعال
+              // 10) فعال/غیرفعال
               Row(
                 children: [
                   Checkbox(
                     value: _form.active,
-                    onChanged: (v) => setState(() => _form.active = v ?? true),
+                    onChanged: (v) =>
+                        setState(() => _form.active = v ?? true),
                   ),
                   const Text(
                     'فعال',
@@ -227,19 +277,25 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
               ElevatedButton(
                 onPressed: _submitting ? null : _handleSubmit,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primary,
+                  foregroundColor:
+                      Theme.of(context).colorScheme.onPrimary,
                 ),
                 child: _submitting
                     ? const SizedBox(
                         height: 22,
                         width: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Text(
                         'ارسال نمونه سوال',
-                        style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                        style: TextStyle(
+                            fontFamily: 'IRANSansXFaNum'),
                       ),
               ),
             ],
@@ -249,11 +305,12 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
     );
   }
 
-  // Dropdown عمومی RTL
+  // Dropdown عمومی RTL با پشتیبانی از itemLabels
   Widget _buildDropdown<T>({
     required String label,
     required T? value,
     required List<T> items,
+    List<String>? itemLabels,
     required void Function(T?) onChanged,
     String? hint,
   }) {
@@ -264,16 +321,21 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
         child: DropdownButtonFormField<T>(
           value: items.contains(value) ? value : null,
           items: items
-              .map((e) => DropdownMenuItem<T>(
-                    value: e,
-                    child: Text('$e', style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
+              .asMap()
+              .entries
+              .map((entry) => DropdownMenuItem<T>(
+                    value: entry.value,
+                    child: Text(
+                      itemLabels != null &&
+                              entry.key < itemLabels.length
+                          ? itemLabels[entry.key]
+                          : entry.value.toString(),
+                      style: const TextStyle(
+                          fontFamily: 'IRANSansXFaNum'),
+                    ),
                   ))
               .toList(),
-          onChanged: (v) {
-            setState(() {
-              onChanged(v);
-            });
-          },
+          onChanged: (v) => onChanged(v),
           decoration: InputDecoration(
             labelText: label,
             hintText: hint,
@@ -286,16 +348,21 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
     );
   }
 
-  // فیلد متنی RTL
+  // فیلد متنی ساده با controller و onChanged
   Widget _buildTextField({
     required String label,
-    required void Function(String?) onSaved,
+    TextEditingController? controller,
+    void Function(String?)? onSaved,
+    void Function(String?)? onChanged,
+    Key? fieldKey,
     String? hint,
     int? maxLength,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         maxLength: maxLength,
         decoration: InputDecoration(
           labelText: label,
@@ -307,6 +374,11 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
         onSaved: onSaved,
+        onChanged: onChanged ??
+            (value) {
+              // همگام‌سازی با form هنگام تایپ
+              onSaved?.call(value);
+            },
       ),
     );
   }
@@ -314,12 +386,17 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
   // فیلد عددی برای int
   Widget _buildIntField({
     required String label,
-    required void Function(int?) onSaved,
+    TextEditingController? controller,
+    void Function(int?)? onSaved,
+    void Function(int?)? onChanged,
+    Key? fieldKey,
     String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -331,10 +408,19 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
         textAlign: TextAlign.right,
         onSaved: (v) {
           if (v == null || v.trim().isEmpty) {
-            onSaved(null);
+            onSaved?.call(null);
             return;
           }
-          onSaved(int.tryParse(v.trim()));
+          onSaved?.call(int.tryParse(v.trim()));
+        },
+        onChanged: (value) {
+          final intValue =
+              value.trim().isEmpty ? null : int.tryParse(value.trim());
+          if (onChanged != null) {
+            onChanged(intValue);
+          } else {
+            onSaved?.call(intValue);
+          }
         },
       ),
     );
@@ -344,18 +430,24 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
   Widget _buildDoubleField({
     required String label,
     required void Function(double?) onSaved,
+    void Function(double?)? onChanged,
+    TextEditingController? controller,
+    Key? fieldKey,
     String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: TextFormField(
+        key: fieldKey,
+        controller: controller,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
           border: const OutlineInputBorder(),
         ),
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        keyboardType:
+            const TextInputType.numberWithOptions(decimal: true),
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.right,
         onSaved: (v) {
@@ -364,6 +456,16 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
             return;
           }
           onSaved(double.tryParse(v.trim()));
+        },
+        onChanged: (value) {
+          final doubleValue = value.trim().isEmpty
+              ? null
+              : double.tryParse(value.trim());
+          if (onChanged != null) {
+            onChanged(doubleValue);
+          } else {
+            onSaved(doubleValue);
+          }
         },
       ),
     );
@@ -375,72 +477,39 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
     final err = _form.validate();
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err, textDirection: TextDirection.rtl)),
+        SnackBar(
+          content: Text(err, textDirection: TextDirection.rtl),
+        ),
       );
       return;
     }
 
     setState(() => _submitting = true);
     try {
-      // تبدیل نام پایه به grade_id
-      final gradeName = _form.grade!;
-      final gradeId = mapGradeStringToInt(gradeName);
-      if (gradeId == null) {
-        throw Exception('خطا در تبدیل نام پایه به ID');
-      }
-
-      // تبدیل نام رشته به track_id
-      int? trackId;
-      final trackName = _form.track;
-      if (trackName != null && trackName != 'بدون رشته') {
-        final supabase = Supabase.instance.client;
-        final tracks = await supabase
-            .from('tracks')
-            .select('id')
-            .eq('name', trackName)
-            .limit(1);
-        if (tracks.isNotEmpty) {
-          trackId = (tracks.first as Map<String, dynamic>)['id'] as int;
-        }
-      }
-
-      // تبدیل نام درس به subject_id
-      final subjectId = _subjectNameToId[_form.subject];
-      if (subjectId == null) {
-        throw Exception('خطا: درس انتخابی در لیست موجود نیست');
-      }
-
-      // تبدیل branch به level برای دیتابیس
-      final levelForDb = _form.levelForDatabase;
-      if (levelForDb == null) {
-        throw Exception('خطا در تبدیل شاخه به مقطع');
-      }
-
       final payload = {
-        'branch': _form.branch,
-        'grade_name': gradeName,
-        'grade_id': gradeId,
-        'track_id': trackId,
-        'subject_name': _form.subject,
-        'subject_id': subjectId,
-        'level': levelForDb,
-        'title': _form.title,
-        'publish_year': _form.publishYear,
-        'has_answer_key': _form.hasAnswerKey,
-        'designer': _form.designer,
+        'grade_id': _form.gradeId,
+        'book_id': _form.bookId,
+        'pdf_title': _form.pdfTitle,
+        'type': _form.type,
+        'year': _form.year,
+        'author': _form.author,
+        'has_answer': _form.hasAnswer,
+        'size': _form.size,
         'pdf_url': _form.pdfUrl,
-        'file_size_mb': _form.fileSizeMb,
-        'page_count': _form.pageCount,
         'active': _form.active,
       };
 
-      Logger.info('📤 [PROVINCIAL-UPLOAD] ارسال با payload: $payload');
+      Logger.info('📤 [PROVINCIAL-UPLOAD] ارسال به سرور: $payload');
+
       await _service.uploadProvincialSample(payload: payload);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ نمونه سوال با موفقیت ثبت شد', textDirection: TextDirection.rtl),
+          content: Text(
+            '✅ نمونه سوال با موفقیت ثبت شد',
+            textDirection: TextDirection.rtl,
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -450,7 +519,10 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ خطا: ${e.toString()}', textDirection: TextDirection.rtl),
+          content: Text(
+            '❌ خطا: ${e.toString()}',
+            textDirection: TextDirection.rtl,
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -459,4 +531,5 @@ class _ProvincialSampleUploadScreenState extends State<ProvincialSampleUploadScr
     }
   }
 }
+
 

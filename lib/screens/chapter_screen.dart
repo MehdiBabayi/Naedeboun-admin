@@ -33,32 +33,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
   bool _loading = false;
   List<LessonVideo> _allVideos = [];  // ← تغییر از _lessons و _videosByLesson
   String _selectedStyle = 'جزوه';
-  Map<String, String> _teachersMap = {};
-
-  // call _loadTeachersMap from existing initState (append there if present)
-
-  Future<void> _loadTeachersMap() async {
-    try {
-      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
-      final supabase = Supabase.instance.client;
-      final teachersData = await supabase
-          .from('teachers')
-          .select('id, name') as List<dynamic>;
-      
-      final Map<String, String> mapped = {};
-      for (final teacher in teachersData) {
-        final teacherMap = teacher as Map<String, dynamic>;
-        mapped[teacherMap['id'].toString()] = teacherMap['name'] ?? '';
-      }
-      if (mounted) {
-        setState(() {
-          _teachersMap = mapped;
-        });
-      }
-    } catch (e) {
-      Logger.error('Error loading teachers map', e);
-    }
-  }
+  // ✅ حذف شد: دیگر نیازی به جدول teachers نیست چون نام استاد مستقیماً در LessonVideo.teacher ذخیره می‌شود
 
   // کمک‌متد برای نمایش کلید/مقدار
   Widget _kv(String key, String value) {
@@ -97,23 +72,60 @@ class _ChapterScreenState extends State<ChapterScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
-    _loadTeachersMap();
+    // ✅ _load() را به didChangeDependencies منتقل کردیم چون از context استفاده می‌کند
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ✅ حالا که context آماده است، می‌توانیم _load() را صدا بزنیم
+    if (_allVideos.isEmpty && !_loading) {
+      _load();
+    }
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     
     try {
-      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
       final contentService = ContentService(Supabase.instance.client);
-      final videos = await contentService.getLessonVideos(widget.chapter.id);
+      
+      // ✅ استراتژی جدید: استفاده از bookId و chapterId از arguments یا از JSON
+      final arguments = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      final String? bookId = arguments?['bookId'] as String?;
+      final String? chapterId = arguments?['chapterId'] as String?;
+      
+      List<LessonVideo> videos;
+      
+      if (bookId != null && chapterId != null) {
+        // استفاده از bookId و chapterId از arguments
+        Logger.info('📹 [CHAPTER] Loading videos with bookId=$bookId, chapterId=$chapterId, gradeId=${widget.gradeId}');
+        videos = await contentService.getLessonVideosByChapter(
+          gradeId: widget.gradeId,
+          bookId: bookId,
+          chapterId: chapterId,
+        );
+        Logger.info('✅ [CHAPTER] Loaded ${videos.length} videos');
+      } else {
+        // Fallback: استفاده از chapter.id (برای سازگاری)
+        Logger.info('⚠️ [CHAPTER] bookId/chapterId not found in arguments, using chapter.id=${widget.chapter.id} as fallback');
+        Logger.debug('📋 [CHAPTER] Arguments: $arguments');
+        videos = await contentService.getLessonVideosByChapterId(widget.chapter.id.toString());
+        Logger.info('✅ [CHAPTER] Loaded ${videos.length} videos (fallback)');
+      }
 
-    if (!mounted) return;
-    setState(() {
+      if (!mounted) return;
+      
+      // لاگ برای دیباگ
+      Logger.info('📊 [CHAPTER] Total videos loaded: ${videos.length}');
+      for (final video in videos) {
+        Logger.debug('  - Video ID: ${video.videoId}, type: ${video.type}, stepNumber: ${video.stepNumber}, title: ${video.title}');
+      }
+      
+      setState(() {
         _allVideos = videos;
-      _loading = false;
-    });
+        _loading = false;
+      });
     } catch (e) {
       Logger.error('Error loading videos', e);
       if (mounted) {
@@ -305,8 +317,14 @@ class _ChapterScreenState extends State<ChapterScreen> {
     int maxLessonOrderWithVideo = 0;
     final Map<int, List<LessonVideo>> videosByLessonOrder = {};
     
+    Logger.info('🎨 [CHAPTER] Filtering videos for style: $_selectedStyle');
+    Logger.info('📹 [CHAPTER] Total videos in _allVideos: ${_allVideos.length}');
+    
     for (final video in _allVideos) {
-      if (_getStyleName(video.style) == _selectedStyle) {
+      final styleName = _getStyleName(video.style);
+      Logger.debug('  - Video ID: ${video.videoId}, type: ${video.type}, styleName: $styleName, selectedStyle: $_selectedStyle');
+      
+      if (styleName == _selectedStyle) {
         final order = video.lessonOrder;
         videosByLessonOrder.putIfAbsent(order, () => []).add(video);
         if (order > maxLessonOrderWithVideo) {
@@ -314,6 +332,9 @@ class _ChapterScreenState extends State<ChapterScreen> {
         }
       }
     }
+    
+    Logger.info('✅ [CHAPTER] Videos for style "$_selectedStyle": ${videosByLessonOrder.values.fold(0, (sum, list) => sum + list.length)}');
+    Logger.info('📊 [CHAPTER] Max lesson order: $maxLessonOrderWithVideo');
 
     // 2) اگر هیچ ویدیویی برای این سبک نیست: فقط یک EmptyState
     if (maxLessonOrderWithVideo == 0) {
@@ -529,7 +550,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                             const SizedBox(width: 2),
                             Flexible(
                               child: Text(
-                                'استاد ${_teachersMap[video.teacherId.toString()] ?? 'نامشخص'}',
+                                'استاد ${video.teacher.isNotEmpty ? video.teacher : 'نامشخص'}',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: Colors.orange[600],
                                   fontSize: 11,
@@ -708,7 +729,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
   }
 
   String _getStyleName(String style) {
-    switch (style) {
+    switch (style.toLowerCase()) {
       case 'جزوه':
       case 'note':
         return 'جزوه';
@@ -717,15 +738,17 @@ class _ChapterScreenState extends State<ChapterScreen> {
         return 'کتاب درسی';
       case 'نمونه سوال':
       case 'sample':
+      case 'exam': // ✅ اضافه شد: نوع exam در دیتابیس
         return 'نمونه سوال';
       default:
+        Logger.info('⚠️ [CHAPTER] Unknown style: $style, defaulting to "جزوه"');
         return 'جزوه';
     }
   }
 
   /// نمایش پاپ‌آپ جزئیات ویدیو با تمام فیلدها
   void _openVideoPopup(LessonVideo video) {
-    final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+    final teacherName = video.teacher.isNotEmpty ? video.teacher : 'نامشخص';
 
     Logger.info('📹 [VIDEO-DETAIL] نمایش جزئیات ویدیو ID: ${video.id}');
 
@@ -753,7 +776,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                   _kv('شماره درس', video.lessonOrder.toString()),
                   _kv('عنوان درس', video.lessonTitle),
                   _kv('استاد', teacherName),
-                  _kv('شناسه استاد', video.teacherId.toString()),
+                  // ✅ حذف شد: شناسه استاد دیگر وجود ندارد، نام استاد مستقیماً در video.teacher ذخیره می‌شود
                   _kv('نوع محتوا', _getStyleName(video.style)),
                   _kv('وضعیت محتوا', video.contentStatus),
                   _kv('فعال', video.active ? 'بله' : 'خیر'),
@@ -761,7 +784,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                   // لینک‌ها
                   _kv(
                     'لینک آپارات',
-                    video.aparatUrl.isNotEmpty ? video.aparatUrl : '-',
+                    (video.aparatUrl != null && video.aparatUrl!.isNotEmpty) ? video.aparatUrl! : '-',
                   ),
                   
                   // Embed HTML (کد کامل)
@@ -830,7 +853,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
                   // اگر ویرایش موفق بود، لیست را رفرش کن و teachers map را به‌روزرسانی کن
                   if (result == true) {
                     Logger.info('🔄 [VIDEO-DETAIL] رفرش لیست ویدیوها بعد از ویرایش');
-                    _loadTeachersMap(); // به‌روزرسانی لیست اساتید
+                    // ✅ حذف شد: دیگر نیازی به به‌روزرسانی teachers map نیست
                     _load(); // رفرش لیست ویدیوها
                   }
                 });
@@ -868,7 +891,7 @@ class _ChapterScreenState extends State<ChapterScreen> {
 
   /// نمایش dialog تایید حذف ویدیو
   void _showDeleteConfirmation(LessonVideo video) {
-    final teacherName = _teachersMap[video.teacherId.toString()] ?? 'نامشخص';
+    final teacherName = video.teacher.isNotEmpty ? video.teacher : 'نامشخص';
     
     Logger.info('🗑️ [VIDEO-DELETE] نمایش dialog تایید حذف برای ویدیو ID: ${video.id}');
 

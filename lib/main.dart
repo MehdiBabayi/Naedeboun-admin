@@ -34,6 +34,7 @@ import 'utils/logger.dart';
 import 'screens/video_upload/video_upload_screen.dart';
 import 'screens/step_by_step_upload/step_by_step_upload_screen.dart';
 import 'screens/provincial_sample_upload/provincial_sample_upload_screen.dart';
+import 'screens/banner_upload/banner_upload_screen.dart';
 
 /// تنظیم orientation بر اساس کانفیگ
 Future<void> _setOrientationFromConfig() async {
@@ -216,6 +217,8 @@ class MyApp extends StatelessWidget {
                 const SimpleNetworkWrapper(child: StepByStepUploadScreen()),
             '/provincial-sample-upload': (context) =>
                 const SimpleNetworkWrapper(child: ProvincialSampleUploadScreen()),
+            '/banner-upload': (context) =>
+                const SimpleNetworkWrapper(child: BannerUploadScreen()),
             '/subject': (context) {
               final args =
                   ModalRoute.of(context)?.settings.arguments

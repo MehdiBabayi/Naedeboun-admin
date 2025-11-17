@@ -9,7 +9,7 @@ import 'dart:async';
 import '../widgets/bubble_nav_bar.dart';
 import '../services/session_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/preload/preload_service.dart';
+// PreloadService قدیمی مبتنی بر Mini-Request در نسخه جدید استفاده نمی‌شود
 import '../exceptions/error_handler.dart';
 import '../widgets/common/empty_state_widget.dart';
 import '../../utils/logger.dart';
@@ -119,23 +119,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// شروع Preloading برای بهبود سرعت navigation
   void _startPreloading() {
-    // Preloading در background اجرا می‌شود
-    Future.delayed(const Duration(milliseconds: 500), () async {
-      try {
-        if (!mounted) return;
-        final appState = context.read<AppStateManager>();
-        final profile = appState.authService.currentProfile;
-
-        if (profile?.grade != null) {
-          await PreloadService.instance.preloadForNextNavigation(
-            currentGradeId: profile!.grade!,
-            currentTrackId: _mapFieldOfStudyToTrackId(profile.fieldOfStudy),
-          );
-        }
-      } catch (e) {
-        Logger.error('⚠️ [PRELOAD] Error in background preloading', e);
-      }
-    });
+    // در پنل ادمین: Mini-Request و Preload مبتنی بر Hive حذف شده‌اند.
+    // اگر بعداً نیاز به Preload مستقیم از Supabase بود، اینجا پیاده‌سازی می‌شود.
+    Logger.info('ℹ️ [HOME] _startPreloading skipped (Mini-Request disabled)');
   }
 
   @override
@@ -169,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Pull-to-refresh removed - data managed by Mini-Request system
+  // Pull-to-refresh: رفرش مستقیم از Supabase
 
   Future<void> _loadSubjects() async {
     // اگر قبلاً لود شده، دوباره لود نکن
@@ -188,12 +174,12 @@ class _HomeScreenState extends State<HomeScreen> {
       // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
       final contentService = ContentService(Supabase.instance.client);
       final subjects = await contentService.getSubjectsForUser(
-        gradeId: gradeId,
-        trackId: trackId,
-      );
+          gradeId: gradeId,
+          trackId: trackId,
+        );
 
       if (!mounted) return;
-      setState(() {
+          setState(() {
         _subjects = subjects;
         _showEmptyState = subjects.isEmpty;
       });
@@ -777,64 +763,71 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 24),
-              // اسلایدر اضافه کردن محتوا (ویدیو، گام‌به‌گام، نمونه سوال)
-              Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                    child: SizedBox(
-                      height: 180,
-                      child: PageView(
-                        controller: _uploadPageController,
-                        onPageChanged: (index) {
-                          setState(() {
-                            _currentUploadPage = index;
-                          });
-                        },
-                        children: [
-                          // کارت 1: اضافه کردن ویدیو
-                          _buildUploadCard(
-                            context,
-                            title: 'اضافه کردن ویدیو',
-                            icon: Icons.video_library,
-                            onTap: () => Navigator.of(context).pushNamed('/video-upload'),
-                          ),
-                          // کارت 2: اضافه کردن گام‌به‌گام
-                          _buildUploadCard(
-                            context,
-                            title: 'اضافه کردن گام‌به‌گام',
-                            icon: Icons.book,
-                            onTap: () => Navigator.of(context).pushNamed('/step-by-step-upload'),
-                          ),
-                          // کارت 3: اضافه کردن نمونه سوال
-                          _buildUploadCard(
-                            context,
-                            title: 'اضافه کردن نمونه سوال',
-                            icon: Icons.quiz,
-                            onTap: () => Navigator.of(context).pushNamed('/provincial-sample-upload'),
-                          ),
-                        ],
+        child: RefreshIndicator(
+          onRefresh: _loadSubjects,
+          color: Theme.of(context).colorScheme.primary,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 24),
+                // اسلایدر اضافه کردن محتوا (ویدیو، گام‌به‌گام، نمونه سوال)
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: SizedBox(
+                        height: 180,
+                        child: PageView(
+                          controller: _uploadPageController,
+                          onPageChanged: (index) {
+                            setState(() {
+                              _currentUploadPage = index;
+                            });
+                          },
+                          children: [
+                            // کارت 1: اضافه کردن ویدیو
+                            _buildUploadCard(
+                              context,
+                              title: 'اضافه کردن ویدیو',
+                              icon: Icons.video_library,
+                              onTap: () => Navigator.of(context)
+                                  .pushNamed('/video-upload'),
+                            ),
+                            // کارت 2: اضافه کردن گام‌به‌گام
+                            _buildUploadCard(
+                              context,
+                              title: 'اضافه کردن گام‌به‌گام',
+                              icon: Icons.book,
+                              onTap: () => Navigator.of(context)
+                                  .pushNamed('/step-by-step-upload'),
+                            ),
+                            // کارت 3: اضافه کردن نمونه سوال
+                            _buildUploadCard(
+                              context,
+                              title: 'اضافه کردن نمونه سوال',
+                              icon: Icons.quiz,
+                              onTap: () => Navigator.of(context)
+                                  .pushNamed('/provincial-sample-upload'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  // نشانگر اسلایدر (dots)
-                  _buildPageIndicator(context),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: _buildSubjectsGrid(context),
-              ),
-              const SizedBox(height: 24),
-            ],
+                    const SizedBox(height: 12),
+                    // نشانگر اسلایدر (dots)
+                    _buildPageIndicator(context),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: _buildSubjectsGrid(context),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),

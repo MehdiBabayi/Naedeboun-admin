@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '../../utils/logger.dart';
 import '../../models/video_upload/video_upload_form_data.dart';
 import '../../services/video_upload/video_upload_service.dart';
@@ -18,121 +19,128 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   bool _submitting = false;
 
   // Controllers برای حفظ مقادیر فیلدها هنگام scroll
-  late final TextEditingController _chapterTitleController = TextEditingController();
-  late final TextEditingController _chapterOrderController = TextEditingController();
-  late final TextEditingController _lessonTitleController = TextEditingController();
-  late final TextEditingController _lessonOrderController = TextEditingController();
-  late final TextEditingController _teacherNameController = TextEditingController();
-  late final TextEditingController _tagsController = TextEditingController();
-  late final TextEditingController _embedHtmlController = TextEditingController();
-  late final TextEditingController _notePdfUrlController = TextEditingController();
-  late final TextEditingController _exercisePdfUrlController = TextEditingController();
-  late final TextEditingController _durationHoursController = TextEditingController();
-  late final TextEditingController _durationMinutesController = TextEditingController();
-  late final TextEditingController _durationSecondsController = TextEditingController();
+  late final TextEditingController _titleController = TextEditingController();
+  late final TextEditingController _chapterIdController = TextEditingController();
+  late final TextEditingController _stepNumberController = TextEditingController();
+  late final TextEditingController _teacherController = TextEditingController();
+  late final TextEditingController _embedUrlController = TextEditingController();
+  late final TextEditingController _directUrlController = TextEditingController();
+  late final TextEditingController _pdfUrlController = TextEditingController();
+  late final TextEditingController _durationController = TextEditingController();
+  late final TextEditingController _thumbnailUrlController = TextEditingController();
 
   // Keys ثابت برای حفظ identity TextFormField ها هنگام rebuild
-  final _chapterTitleKey = GlobalKey();
-  final _chapterOrderKey = GlobalKey();
-  final _lessonTitleKey = GlobalKey();
-  final _lessonOrderKey = GlobalKey();
-  final _teacherNameKey = GlobalKey();
-  final _tagsKey = GlobalKey();
-  final _embedHtmlKey = GlobalKey();
-  final _notePdfUrlKey = GlobalKey();
-  final _exercisePdfUrlKey = GlobalKey();
-  final _durationHoursKey = GlobalKey();
-  final _durationMinutesKey = GlobalKey();
-  final _durationSecondsKey = GlobalKey();
+  final _titleKey = GlobalKey();
+  final _chapterIdKey = GlobalKey();
+  final _stepNumberKey = GlobalKey();
+  final _teacherKey = GlobalKey();
+  final _embedUrlKey = GlobalKey();
+  final _directUrlKey = GlobalKey();
+  final _pdfUrlKey = GlobalKey();
+  final _durationKey = GlobalKey();
+  final _thumbnailUrlKey = GlobalKey();
+
+  // داده‌های dropdown از JSON
+  Map<String, dynamic>? _gradesJson;
+  Map<String, dynamic>? _currentGradeData;
+  List<String> _gradeOptions = [];
+  List<String> _subjectOptions = [];
+  Map<String, String> _subjectSlugs = {};
+  List<String> _chapterOptions = [];
+  List<String> _typeOptions = ['note', 'book', 'exam'];
 
   @override
   void initState() {
     super.initState();
+    _loadGradesJson();
     // تنظیم مقادیر اولیه از _form
-    _chapterTitleController.text = _form.chapterTitle ?? '';
-    _chapterOrderController.text = _form.chapterOrder?.toString() ?? '';
-    _lessonTitleController.text = _form.lessonTitle ?? '';
-    _lessonOrderController.text = _form.lessonOrder?.toString() ?? '';
-    _teacherNameController.text = _form.teacherName ?? '';
-    _tagsController.text = _form.tags ?? '';
-    _embedHtmlController.text = _form.embedHtml ?? '';
-    _notePdfUrlController.text = _form.notePdfUrl ?? '';
-    _exercisePdfUrlController.text = _form.exercisePdfUrl ?? '';
-    _durationHoursController.text = _form.durationHours?.toString() ?? '';
-    _durationMinutesController.text = _form.durationMinutes?.toString() ?? '';
-    _durationSecondsController.text = _form.durationSeconds?.toString() ?? '';
+    _titleController.text = _form.title ?? '';
+    _chapterIdController.text = _form.chapterId ?? '';
+    _stepNumberController.text = _form.stepNumber?.toString() ?? '';
+    _teacherController.text = _form.teacher ?? '';
+    _embedUrlController.text = _form.embedUrl ?? '';
+    _directUrlController.text = _form.directUrl ?? '';
+    _pdfUrlController.text = _form.pdfUrl ?? '';
+    _durationController.text = _form.duration?.toString() ?? '';
+    _thumbnailUrlController.text = _form.thumbnailUrl ?? '';
+
+    // تنظیم مقدار پیش‌فرض برای active
+    _form.active = _form.active ?? true;
   }
 
   @override
   void dispose() {
-    _chapterTitleController.dispose();
-    _chapterOrderController.dispose();
-    _lessonTitleController.dispose();
-    _lessonOrderController.dispose();
-    _teacherNameController.dispose();
-    _tagsController.dispose();
-    _embedHtmlController.dispose();
-    _notePdfUrlController.dispose();
-    _exercisePdfUrlController.dispose();
-    _durationHoursController.dispose();
-    _durationMinutesController.dispose();
-    _durationSecondsController.dispose();
+    _titleController.dispose();
+    _chapterIdController.dispose();
+    _stepNumberController.dispose();
+    _teacherController.dispose();
+    _embedUrlController.dispose();
+    _directUrlController.dispose();
+    _pdfUrlController.dispose();
+    _durationController.dispose();
+    _thumbnailUrlController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadGradesJson() async {
+    try {
+      final gradesData = await DefaultAssetBundle.of(context).loadString('assets/data/grades.json');
+      _gradesJson = json.decode(gradesData);
+      _gradeOptions = _gradesJson!.keys.map((k) => k.toString()).toList()..sort();
+      setState(() {});
+    } catch (e) {
+      Logger.error('Failed to load grades.json', e);
+    }
+  }
+
+  void _onGradeChanged(int gradeId) {
+    if (_gradesJson == null) return;
+
+    final gradeKey = gradeId.toString();
+    _currentGradeData = _gradesJson![gradeKey];
+    if (_currentGradeData != null && _currentGradeData!['books'] != null) {
+      final books = _currentGradeData!['books'] as Map<String, dynamic>;
+      _subjectOptions = books.keys.map((k) => books[k]['title'] as String).toList();
+      _subjectSlugs = Map.fromEntries(
+        books.entries.map((e) => MapEntry(e.value['title'] as String, e.key))
+      );
+    } else {
+      _subjectOptions = [];
+      _subjectSlugs = {};
+    }
+    _chapterOptions = [];
+    _form.gradeId = gradeId;
+    _form.bookId = null;
+    _form.chapterId = null;
+    setState(() {});
+  }
+
+  void _onSubjectChanged(String subjectTitle) {
+    if (_currentGradeData == null) return;
+
+    final books = _currentGradeData!['books'] as Map<String, dynamic>;
+    final bookId = _subjectSlugs[subjectTitle];
+    if (bookId != null && books[bookId] != null) {
+      final bookData = books[bookId] as Map<String, dynamic>;
+      final chapters = bookData['chapters'] as Map<String, dynamic>?;
+      if (chapters != null) {
+        _chapterOptions = chapters.keys.map((k) => k).toList()..sort();
+      } else {
+        _chapterOptions = [];
+      }
+    }
+    _form.bookId = bookId;
+    _form.chapterId = null;
+    setState(() {});
+  }
+
   // داده‌های Dropdown مطابق PHP
-  final Map<String, List<String>> _gradesData = const {
-    'ابتدایی': ['یکم', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'],
-    'متوسطه اول': ['هفتم', 'هشتم', 'نهم'],
-    'متوسطه دوم': ['دهم', 'یازدهم', 'دوازدهم'],
-  };
 
-  final List<String> _tracks = const ['بدون رشته', 'ریاضی', 'تجربی', 'انسانی'];
 
-  final Map<String, String> _subjectOptions = const {
-    'ریاضی': 'riazi',
-    'علوم': 'olom',
-    'فارسی': 'farsi',
-    'قرآن': 'quran',
-    'مطالعات اجتماعی': 'motaleat',
-    'هدیه های آسمانی': 'hediye',
-    'نگارش': 'negaresh',
-    'عربی': 'arabi',
-    'انگلیسی': 'englisi',
-    'دینی': 'dini',
-    'فیزیک': 'fizik',
-    'شیمی': 'shimi',
-    'هندسه': 'hendese',
-    'هنر': 'honar',
-    'جغرافیا': 'joghrafia',
-    'فناوری': 'fanavari',
-    'تفکر و سبک زندگی': 'tafakor',
-    'حسابان': 'hesaban',
-    'زمین شناسی': 'zamin',
-    'محیط زیست': 'mohit',
-    'تاریخ': 'tarikh',
-    'سلامت و بهداشت': 'salamat',
-    'هویت اجتماعی': 'hoviat',
-    'مدیریت خانواده': 'modiriat',
-    'ریاضیات گسسته': 'gosaste',
-    'آمادگی دفاعی': 'amadegi',
-    'اقتصاد': 'eghtesad',
-    'علوم و فنون ادبی': 'fonon',
-    'جامعه شناسی': 'jameye',
-    'کارگاه کارآفرینی': 'kargah',
-    'منطق': 'mantegh',
-    'فلسفه': 'falsafe',
-    'روانشناسی': 'ravanshenasi',
-    'زیست شناسی': 'zist',
-  };
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isHighSchool = _form.branch == 'متوسطه دوم';
-
-    // لیست پایه‌ها بر اساس شاخه انتخاب‌شده
-    final grades = _gradesData[_form.branch ?? ''] ?? <String>[];
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -158,213 +166,147 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             cacheExtent: 1000, // افزایش cache برای حفظ widget ها هنگام scroll
             children: [
-              // 1) شاخه
-              _buildDropdown<String>(
-                label: 'شاخه',
-                value: _form.branch,
-                items: const ['ابتدایی', 'متوسطه اول', 'متوسطه دوم'],
-                onChanged: (v) {
-                  setState(() {
-                    _form.branch = v;
-                    // ریست وابسته‌ها
-                    _form.grade = null;
-                    _form.track = 'بدون رشته';
-                  });
-                },
-              ),
-
-              // 2) پایه (وابسته به شاخه)
-              _buildDropdown<String>(
+              // 1) پایه
+              _buildDropdown<int>(
                 label: 'پایه',
-                value: _form.grade,
-                items: grades,
-                onChanged: (v) => setState(() => _form.grade = v),
-                hint: grades.isEmpty ? 'ابتدا شاخه را انتخاب کنید' : null,
+                value: _form.gradeId,
+                items: _gradeOptions.map((e) => int.parse(e)).toList(),
+                itemLabels: _gradeOptions.map((e) => 'پایه $e').toList(),
+                onChanged: (v) {
+                  if (v != null) _onGradeChanged(v);
+                },
+                hint: 'پایه را انتخاب کنید',
               ),
 
-              // 3) رشته (فقط برای متوسطه دوم نمایش بده)
-              if (isHighSchool)
-                _buildDropdown<String>(
-                  label: 'رشته',
-                  value: _form.track ?? 'بدون رشته',
-                  items: _tracks,
-                  onChanged: (v) => setState(() => _form.track = v),
-                ),
-
-              // 4) درس
+              // 2) درس (وابسته به پایه)
               _buildDropdown<String>(
                 label: 'درس',
-                value: _form.subject,
-                items: _subjectOptions.keys.toList(),
+                value: _subjectOptions.isNotEmpty && _form.bookId != null
+                    ? _subjectOptions.firstWhere(
+                        (title) => _subjectSlugs[title] == _form.bookId,
+                        orElse: () => '')
+                    : null,
+                items: _subjectOptions,
                 onChanged: (v) {
-                  setState(() {
-                    _form.subject = v;
-                    // همگام‌سازی اسلاگ با انتخاب درس
-                    final slug = v == null ? null : _subjectOptions[v];
-                    _form.subjectSlug = slug;
-                  });
+                  if (v != null) _onSubjectChanged(v);
                 },
+                hint: _subjectOptions.isEmpty ? 'ابتدا پایه را انتخاب کنید' : null,
               ),
 
-              // 5) اسلاگ درس (قابل تغییر اما پیش‌فرض از درس)
+              // 3) فصل (وابسته به درس)
               _buildDropdown<String>(
-                label: 'اسلاگ درس',
-                value: _form.subjectSlug,
-                items: _subjectOptions.values.toList(),
-                onChanged: (v) => setState(() => _form.subjectSlug = v),
-                hint: 'با انتخاب درس به‌صورت خودکار پر می‌شود',
+                label: 'فصل',
+                value: _form.chapterId,
+                items: _chapterOptions,
+                onChanged: (v) => setState(() => _form.chapterId = v),
+                hint: _chapterOptions.isEmpty ? 'ابتدا درس را انتخاب کنید' : null,
               ),
 
-              // 6) عنوان فصل
-              _buildTextField(
-                label: 'عنوان فصل',
-                controller: _chapterTitleController,
-                fieldKey: _chapterTitleKey,
-                onSaved: (v) => _form.chapterTitle = v,
-                onChanged: (v) {
-                  _form.chapterTitle = v;
-                },
-                hint: 'مثال: فصل اول - اعداد صحیح',
-              ),
+              // 4) شماره مرحله
               _buildNumberField(
-                label: 'شماره فصل',
-                controller: _chapterOrderController,
-                fieldKey: _chapterOrderKey,
-                onSaved: (v) => _form.chapterOrder = v,
+                label: 'شماره مرحله',
+                controller: _stepNumberController,
+                fieldKey: _stepNumberKey,
+                onSaved: (v) => _form.stepNumber = v,
                 onChanged: (v) {
-                  _form.chapterOrder = v;
+                  _form.stepNumber = v;
                 },
                 hint: 'مثال: 1',
               ),
 
-              // 7) نوع محتوا (Dropdown)
+              // 5) عنوان ویدیو
+              _buildTextField(
+                label: 'عنوان ویدیو',
+                controller: _titleController,
+                fieldKey: _titleKey,
+                onSaved: (v) => _form.title = v,
+                onChanged: (v) {
+                  _form.title = v;
+                },
+                hint: 'مثال: جمع اعداد صحیح',
+              ),
+
+              // 6) نوع محتوا
               _buildDropdown<String>(
                 label: 'نوع محتوا',
-                value: _form.style,
-                items: const ['جزوه', 'نمونه سوال', 'کتاب درسی'],
-                onChanged: (v) => _form.style = v,
-                hint: 'انتخاب کنید',
+                value: _form.type,
+                items: _typeOptions,
+                itemLabels: const ['جزوه', 'کتاب درسی', 'نمونه سوال'],
+                onChanged: (v) => setState(() => _form.type = v),
               ),
 
-              // 8) عنوان درس و شماره درس
-              _buildTextField(
-                label: 'عنوان درس',
-                controller: _lessonTitleController,
-                fieldKey: _lessonTitleKey,
-                onSaved: (v) => _form.lessonTitle = v,
-                onChanged: (v) {
-                  _form.lessonTitle = v;
-                },
-                hint: 'مثال: درس اول - جمع اعداد',
-              ),
-              _buildNumberField(
-                label: 'شماره درس',
-                controller: _lessonOrderController,
-                fieldKey: _lessonOrderKey,
-                onSaved: (v) => _form.lessonOrder = v,
-                onChanged: (v) {
-                  _form.lessonOrder = v;
-                },
-                hint: 'مثال: 1',
-              ),
-
-              // 9) نام استاد
+              // 7) نام استاد
               _buildTextField(
                 label: 'نام استاد',
-                controller: _teacherNameController,
-                fieldKey: _teacherNameKey,
-                onSaved: (v) => _form.teacherName = v,
+                controller: _teacherController,
+                fieldKey: _teacherKey,
+                onSaved: (v) => _form.teacher = v,
                 onChanged: (v) {
-                  _form.teacherName = v;
+                  _form.teacher = v;
                 },
                 hint: 'مثال: استاد احمدی',
               ),
 
-              // 10) مدت زمان
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'ساعت',
-                      controller: _durationHoursController,
-                      fieldKey: _durationHoursKey,
-                      onSaved: (v) => _form.durationHours = v,
-                      onChanged: (v) {
-                        _form.durationHours = v;
-                      },
-                      hint: '0',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'دقیقه',
-                      controller: _durationMinutesController,
-                      fieldKey: _durationMinutesKey,
-                      onSaved: (v) => _form.durationMinutes = v,
-                      onChanged: (v) {
-                        _form.durationMinutes = v;
-                      },
-                      hint: '0-59',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildNumberField(
-                      label: 'ثانیه',
-                      controller: _durationSecondsController,
-                      fieldKey: _durationSecondsKey,
-                      onSaved: (v) => _form.durationSeconds = v,
-                      onChanged: (v) {
-                        _form.durationSeconds = v;
-                      },
-                      hint: '0-59',
-                    ),
-                  ),
-                ],
+              // 8) لینک embed ویدیو
+              _buildTextField(
+                label: 'لینک embed ویدیو',
+                controller: _embedUrlController,
+                fieldKey: _embedUrlKey,
+                onSaved: (v) => _form.embedUrl = v,
+                onChanged: (v) {
+                  _form.embedUrl = v;
+                },
+                hint: 'لینک embed آپارات',
               ),
 
-              // 11) سایر فیلدها
+              // 9) لینک مستقیم ویدیو (اختیاری)
               _buildTextField(
-                label: 'تگ‌ها (با کاما جدا کنید)',
-                controller: _tagsController,
-                fieldKey: _tagsKey,
-                onSaved: (v) => _form.tags = v,
+                label: 'لینک مستقیم ویدیو (اختیاری)',
+                controller: _directUrlController,
+                fieldKey: _directUrlKey,
+                onSaved: (v) => _form.directUrl = v,
                 onChanged: (v) {
-                  _form.tags = v;
+                  _form.directUrl = v;
                 },
-                hint: 'مثال: حد, پایه ۹, تابع',
+                hint: 'لینک مستقیم ویدیو',
               ),
+
+              // 10) لینک PDF (یک فیلد واحد)
               _buildTextField(
-                label: 'Embed HTML آپارات (اختیاری)',
-                controller: _embedHtmlController,
-                fieldKey: _embedHtmlKey,
-                onSaved: (v) => _form.embedHtml = v,
+                label: 'لینک PDF (اختیاری)',
+                controller: _pdfUrlController,
+                fieldKey: _pdfUrlKey,
+                onSaved: (v) => _form.pdfUrl = v,
                 onChanged: (v) {
-                  _form.embedHtml = v;
+                  _form.pdfUrl = v;
                 },
-                hint: 'کد embed آپارات',
+                hint: 'لینک PDF جزوه یا نمونه سوال',
               ),
+
+              // 11) مدت زمان (ثانیه)
+              _buildNumberField(
+                label: 'مدت زمان (ثانیه)',
+                controller: _durationController,
+                fieldKey: _durationKey,
+                onSaved: (v) => _form.duration = v,
+                onChanged: (v) {
+                  _form.duration = v;
+                },
+                hint: 'مثال: 3600 برای ۱ ساعت',
+              ),
+
+              // 12) لینک تصویر بندانگشتی (اختیاری)
               _buildTextField(
-                label: 'لینک PDF جزوه (اختیاری)',
-                controller: _notePdfUrlController,
-                fieldKey: _notePdfUrlKey,
-                onSaved: (v) => _form.notePdfUrl = v,
+                label: 'لینک تصویر بندانگشتی (اختیاری)',
+                controller: _thumbnailUrlController,
+                fieldKey: _thumbnailUrlKey,
+                onSaved: (v) => _form.thumbnailUrl = v,
                 onChanged: (v) {
-                  _form.notePdfUrl = v;
+                  _form.thumbnailUrl = v;
                 },
-                hint: 'https://...',
+                hint: 'لینک تصویر بندانگشتی',
               ),
-              _buildTextField(
-                label: 'لینک PDF نمونه سوال (اختیاری)',
-                controller: _exercisePdfUrlController,
-                fieldKey: _exercisePdfUrlKey,
-                onSaved: (v) => _form.exercisePdfUrl = v,
-                onChanged: (v) {
-                  _form.exercisePdfUrl = v;
-                },
-                hint: 'https://...',
-              ),
+
 
               const SizedBox(height: 16),
               ElevatedButton(
@@ -396,6 +338,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     required String label,
     required T? value,
     required List<T> items,
+    List<String>? itemLabels,
     required void Function(T?) onChanged,
     String? hint,
   }) {
@@ -408,9 +351,16 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
             return DropdownButtonFormField<T>(
               value: items.contains(value) ? value : null,
               items: items
-                  .map((e) => DropdownMenuItem<T>(
-                        value: e,
-                        child: Text('$e', style: const TextStyle(fontFamily: 'IRANSansXFaNum')),
+                  .asMap()
+                  .entries
+                  .map((entry) => DropdownMenuItem<T>(
+                        value: entry.value,
+                        child: Text(
+                          itemLabels != null && itemLabels.length > entry.key
+                              ? itemLabels[entry.key]
+                              : '${entry.value}',
+                          style: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+                        ),
                       ))
                   .toList(),
               onChanged: (v) {
@@ -508,20 +458,17 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
   Future<void> _handleSubmit() async {
     // ذخیره مقادیر فرم از controller ها به _form
     _formKey.currentState?.save();
-    
+
     // همچنین مقادیر را مستقیماً از controller ها بگیر (برای اطمینان)
-    _form.chapterTitle = _chapterTitleController.text.trim().isEmpty ? null : _chapterTitleController.text.trim();
-    _form.chapterOrder = int.tryParse(_chapterOrderController.text.trim());
-    _form.lessonTitle = _lessonTitleController.text.trim().isEmpty ? null : _lessonTitleController.text.trim();
-    _form.lessonOrder = int.tryParse(_lessonOrderController.text.trim());
-    _form.teacherName = _teacherNameController.text.trim().isEmpty ? null : _teacherNameController.text.trim();
-    _form.tags = _tagsController.text.trim().isEmpty ? null : _tagsController.text.trim();
-    _form.embedHtml = _embedHtmlController.text.trim().isEmpty ? null : _embedHtmlController.text.trim();
-    _form.notePdfUrl = _notePdfUrlController.text.trim().isEmpty ? null : _notePdfUrlController.text.trim();
-    _form.exercisePdfUrl = _exercisePdfUrlController.text.trim().isEmpty ? null : _exercisePdfUrlController.text.trim();
-    _form.durationHours = int.tryParse(_durationHoursController.text.trim());
-    _form.durationMinutes = int.tryParse(_durationMinutesController.text.trim());
-    _form.durationSeconds = int.tryParse(_durationSecondsController.text.trim());
+    _form.title = _titleController.text.trim().isEmpty ? null : _titleController.text.trim();
+    _form.chapterId = _chapterIdController.text.trim().isEmpty ? null : _chapterIdController.text.trim();
+    _form.stepNumber = int.tryParse(_stepNumberController.text.trim());
+    _form.teacher = _teacherController.text.trim().isEmpty ? null : _teacherController.text.trim();
+    _form.embedUrl = _embedUrlController.text.trim().isEmpty ? null : _embedUrlController.text.trim();
+    _form.directUrl = _directUrlController.text.trim().isEmpty ? null : _directUrlController.text.trim();
+    _form.pdfUrl = _pdfUrlController.text.trim().isEmpty ? null : _pdfUrlController.text.trim();
+    _form.duration = int.tryParse(_durationController.text.trim());
+    _form.thumbnailUrl = _thumbnailUrlController.text.trim().isEmpty ? null : _thumbnailUrlController.text.trim();
 
     // اعتبارسنجی حداقلی
     final err = _form.validate();
@@ -535,26 +482,19 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
     setState(() => _submitting = true);
     try {
       final payload = {
-        'branch': _form.branch,
-        'grade': _form.grade,
-        'track': (_form.track == null || _form.track!.isEmpty || _form.track == 'بدون رشته')
-            ? null
-            : _form.track,
-        'subject': _form.subject,
-        'subject_slug': _form.subjectSlug,
-        'chapter_title': _form.chapterTitle,
-        'chapter_order': _form.chapterOrder,
-        'lesson_title': _form.lessonTitle,
-        'lesson_order': _form.lessonOrder,
-        'teacher_name': _form.teacherName,
-        'style': _form.style,
-        'duration_sec': _form.durationInSeconds,
-        'tags': _form.tagsList,
-        'embed_html': _form.embedHtml,
-        'allow_landscape': true,
-        'note_pdf_url': _form.notePdfUrl,
-        'exercise_pdf_url': _form.exercisePdfUrl,
-        'aparat_url': '',
+        'grade_id': _form.gradeId,
+        'book_id': _form.bookId,
+        'chapter_id': _form.chapterId,
+        'step_number': _form.stepNumber,
+        'title': _form.title,
+        'type': _form.type,
+        'teacher': _form.teacher,
+        'embed_url': _form.embedUrl,
+        'direct_url': _form.directUrl,
+        'pdf_url': _form.pdfUrl,
+        'duration': _form.duration,
+        'thumbnail_url': _form.thumbnailUrl,
+        'active': _form.active ?? true,
       };
 
       await _service.uploadVideo(payload: payload);

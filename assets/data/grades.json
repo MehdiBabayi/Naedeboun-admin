@@ -1,0 +1,86 @@
+{
+  "1": {
+    "title": "پایه اول",
+    "path": "assets/data/videos/grade1.json"
+  },
+  "2": {
+    "title": "پایه دوم",
+    "path": "assets/data/videos/grade2.json"
+  },
+  "3": {
+    "title": "پایه سوم",
+    "path": "assets/data/videos/grade3.json"
+  },
+  "4": {
+    "title": "پایه چهارم",
+    "path": "assets/data/videos/grade4.json"
+  },
+  "5": {
+    "title": "پایه پنجم",
+    "path": "assets/data/videos/grade5.json"
+  },
+  "6": {
+    "title": "پایه ششم",
+    "path": "assets/data/videos/grade6.json"
+  },
+  "7": {
+    "title": "پایه هفتم",
+    "path": "assets/data/videos/grade7.json"
+  },
+  "8": {
+    "title": "پایه هشتم",
+    "path": "assets/data/videos/grade8.json"
+  },
+  "9": {
+    "title": "پایه نهم",
+    "path": "assets/data/videos/grade9.json"
+  },
+  "10": {
+    "title": "دهم - ریاضی فیزیک",
+    "path": "assets/data/videos/grade10_riazi.json"
+  },
+  "11": {
+    "title": "دهم - تجربی",
+    "path": "assets/data/videos/grade10_tajrobi.json"
+  },
+  "12": {
+    "title": "دهم - انسانی",
+    "path": "assets/data/videos/grade10_ensani.json"
+  },
+  "13": {
+    "title": "دهم - فنی و حرفه‌ای",
+    "path": "assets/data/videos/grade10_fani.json"
+  },
+  "14": {
+    "title": "یازدهم - ریاضی فیزیک",
+    "path": "assets/data/videos/grade11_riazi.json"
+  },
+  "15": {
+    "title": "یازدهم - تجربی",
+    "path": "assets/data/videos/grade11_tajrobi.json"
+  },
+  "16": {
+    "title": "یازدهم - انسانی",
+    "path": "assets/data/videos/grade11_ensani.json"
+  },
+  "17": {
+    "title": "یازدهم - فنی و حرفه‌ای",
+    "path": "assets/data/videos/grade11_fani.json"
+  },
+  "18": {
+    "title": "دوازدهم - ریاضی فیزیک",
+    "path": "assets/data/videos/grade12_riazi.json"
+  },
+  "19": {
+    "title": "دوازدهم - تجربی",
+    "path": "assets/data/videos/grade12_tajrobi.json"
+  },
+  "20": {
+    "title": "دوازدهم - انسانی",
+    "path": "assets/data/videos/grade12_ensani.json"
+  },
+  "21": {
+    "title": "دوازدهم - فنی و حرفه‌ای",
+    "path": "assets/data/videos/grade12_fani.json"
+  }
+}

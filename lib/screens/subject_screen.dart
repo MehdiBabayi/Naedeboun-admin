@@ -3,7 +3,7 @@ import 'package:nardeboun/models/content/subject.dart';
 import 'package:nardeboun/services/content/content_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nardeboun/services/content/book_cover_service.dart';
-import 'package:nardeboun/models/content/chapter.dart';
+import 'package:nardeboun/models/content/json_chapter.dart';
 import '../widgets/bubble_nav_bar.dart';
 import '../../utils/grade_utils.dart';
 import '../widgets/common/empty_state_widget.dart';
@@ -27,11 +27,14 @@ class SubjectScreen extends StatefulWidget {
 
 class _SubjectScreenState extends State<SubjectScreen> {
   late final BookCoverService _bookCoverService;
-  List<Chapter>? _chapters; // ← null = هنوز لود نشده
+  List<JsonChapter>? _jsonChapters; // ← فصل‌ها از JSON + lesson_videos
   bool _loading = false; // ← شروع با false (بدون Loader)
   String _bookCoverPath = '';
   String? _trackName;
-  final Map<int, List<String>> _chapterTeachers = {}; // فصل ID -> لیست نام اساتید
+  String? _bookId; // شناسه کتاب از JSON (مثل "riazi", "olom")
+  final Map<String, List<String>> _chapterTeachers = {}; // chapterId -> اساتید ویدیوها
+  final Map<String, bool> _chapterHasVideos = {}; // chapterId -> آیا ویدیو دارد؟
+  String _chapterTypeLabel = 'فصل';
 
   @override
   void initState() {
@@ -52,31 +55,17 @@ class _SubjectScreenState extends State<SubjectScreen> {
     }
 
     // اگر قبلاً لود شده، دوباره لود نکن
-    if (_chapters != null && _chapters!.isNotEmpty) {
+    if (_jsonChapters != null && _jsonChapters!.isNotEmpty) {
       Logger.info('🚀 [SUBJECT] Chapters already loaded, skipping...');
       return;
     }
 
-    if (widget.trackId != null) {
-      try {
-        final trackResult = await Supabase.instance.client
-            .from('tracks')
-            .select('name')
-            .eq('id', widget.trackId!)
-            .single();
-        _trackName = trackResult['name'] as String?;
-      } catch (e) {
-        Logger.error('Error getting track name', e);
-        _trackName = null;
-      }
-    }
+    setState(() => _loading = true);
 
     try {
       Logger.debug('🎯 SubjectScreen Debug:');
       Logger.debug('   - Subject name: "${widget.subject?.name ?? 'NULL'}"');
-      Logger.debug('   - Subject slug: "${widget.subject?.slug ?? 'NULL'}"');
       Logger.debug('   - Grade ID: ${widget.gradeId}');
-      Logger.debug('   - Track name: "$_trackName"');
 
       // دریافت track name اگر موجود است
       if (widget.trackId != null) {
@@ -93,9 +82,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
           _trackName = null;
         }
       } else {
-        // برای پایه‌های 1-9، track name همیشه null است
         _trackName = null;
-        Logger.debug('🔍 [SUBJECT] No track ID, setting track name to null');
       }
 
       // اگر در خود subject نبود، از سرویس بگیر
@@ -108,99 +95,133 @@ class _SubjectScreenState extends State<SubjectScreen> {
 
         if (coverPath != null && coverPath.isNotEmpty) {
           _bookCoverPath = coverPath;
-          Logger.info('✅ [SUBJECT] Book cover (via service): $_bookCoverPath');
-        } else {
-          Logger.info('⚠️ [SUBJECT] No book cover found');
-          _bookCoverPath = '';
         }
       }
 
-      Logger.debug('📖 Final book cover path: "$_bookCoverPath"');
-    } catch (e) {
-      Logger.error('❌ Error getting book cover path', e);
-      _bookCoverPath = '';
-    }
-
-    // 🚀 استفاده از subjectOfferId ذخیره شده (بدون request!)
-    int? offerId = widget.subject!.subjectOfferId;
-
-    // اگر null بود، از سرور بگیر
-    if (offerId == null) {
-      Logger.info('⚠️ subjectOfferId is null, fetching from server...');
+      // ✅ استراتژی جدید: ترکیب JSON و lesson_videos
       final contentService = ContentService(Supabase.instance.client);
-      offerId = await contentService.getSubjectOfferId(
-        subjectId: widget.subject!.id,
+
+      // 1. bookId را از خود subject (slug) بگیر؛ اگر نبود، از JSON map پیدا کن
+      _bookId = widget.subject?.slug;
+      if (_bookId == null || _bookId!.isEmpty) {
+        final bookIdMap = await contentService.getBookIdMapForGrade(widget.gradeId);
+        final subjectName = widget.subject?.name.trim();
+        if (subjectName != null && subjectName.isNotEmpty) {
+          _bookId = bookIdMap[subjectName];
+        }
+      }
+
+      if (_bookId == null || _bookId!.isEmpty) {
+        Logger.info('⚠️ [SUBJECT] No bookId found for subject: ${widget.subject!.name}');
+        if (!mounted) return;
+        setState(() {
+          _jsonChapters = [];
+          _loading = false;
+        });
+        return;
+      }
+
+      Logger.info('✅ [SUBJECT] Found bookId: $_bookId for subject: ${widget.subject!.name}');
+
+      // 2. خواندن ساختار فصل‌ها و chapter_type از JSON
+      final bookData = await contentService.getBookDataFromJson(
         gradeId: widget.gradeId,
-        trackId: widget.trackId,
+        bookId: _bookId!,
       );
-    } else {
-      Logger.info('✅ Using subjectOfferId: $offerId');
-    }
+      final jsonChaptersMap = bookData?.chapters ?? {};
+      _chapterTypeLabel = bookData?.chapterType ?? 'فصل';
 
-    if (offerId != null) {
-      // ✅ تغییر: مستقیماً از Supabase بخوان (بدون cache)
-      final contentService = ContentService(Supabase.instance.client);
-      final chapters = await contentService.getChapters(offerId);
+      // 3. خواندن ویدیوها از lesson_videos برای این bookId
+      final videos = await contentService.getLessonVideosByBook(
+        gradeId: widget.gradeId,
+        bookId: _bookId!,
+      );
 
-      // لود کردن ویدیوهای هر فصل برای گرفتن نام واقعی اساتید
-      await _loadChapterTeachers(chapters);
+      Logger.info('📹 [SUBJECT] Found ${videos.length} videos for bookId=$_bookId');
 
-      if (!mounted) return;
-      setState(() {
-        _chapters = chapters;
-        _loading = false;
-      });
-    } else {
-      if (!mounted) return;
-      setState(() {
-        _chapters = const [];
-        _loading = false;
-      });
-    }
-  }
+      // 4. استخراج اطلاعات ویدیوها برای هر فصل
+      _chapterTeachers.clear();
+      _chapterHasVideos.clear();
+      for (final video in videos) {
+        _chapterHasVideos[video.chapterId] = true;
+        final teacherSet = _chapterTeachers.putIfAbsent(video.chapterId, () => []);
+        if (!teacherSet.contains(video.teacher)) {
+          teacherSet.add(video.teacher);
+        }
+      }
 
-  // لود کردن ویدیوهای هر فصل برای گرفتن نام واقعی اساتید
-  Future<void> _loadChapterTeachers(List<Chapter> chapters) async {
-    _chapterTeachers.clear();
+      // 5. ساخت لیست JsonChapter فقط برای فصل‌هایی که ویدیو دارند
+      final List<JsonChapter> chaptersForDisplay = [];
+      for (final entry in jsonChaptersMap.entries) {
+        final chapterId = entry.key;
+        final chapterTitle = entry.value;
 
-    for (final chapter in chapters) {
-      try {
-        // ✅ تغییر: مستقیماً ویدیوها را از Supabase می‌گیریم
-        final contentService = ContentService(Supabase.instance.client);
-        final videos = await contentService.getLessonVideos(chapter.id);
-
-        // استخراج نام‌های منحصر به فرد اساتید
-        final Set<String> teacherNames = {};
-
-        // ✅ تغییر: مستقیماً از videos استفاده می‌کنیم (بدون حلقه lessons)
-        for (final video in videos) {
-          // استفاده از teacherId برای گرفتن نام استاد
-          final teacherName = _getTeacherNameById(video.teacherId);
-          if (teacherName.isNotEmpty) {
-            teacherNames.add(teacherName);
-          }
+        final hasVideos = _chapterHasVideos[chapterId] ?? false;
+        
+        // فقط فصل‌هایی که ویدیو دارند را اضافه کن
+        if (hasVideos) {
+          chaptersForDisplay.add(
+            JsonChapter(
+              chapterId: chapterId,
+              title: chapterTitle,
+              bookId: _bookId!,
+              gradeId: widget.gradeId,
+            ),
+          );
         }
 
-        _chapterTeachers[chapter.id] = teacherNames.toList();
-      } catch (e) {
-        Logger.error('❌ Error loading teachers for chapter ${chapter.id}', e);
-        _chapterTeachers[chapter.id] = [];
+        // اگر برای این فصل استادی ثبت نشده بود، مقدار پیش‌فرض بگذاریم
+        _chapterTeachers.putIfAbsent(chapterId, () => []);
+        _chapterHasVideos.putIfAbsent(chapterId, () => false);
       }
+      
+      // لاگ برای دیباگ
+      Logger.info('📊 [SUBJECT] Chapters with videos: ${chaptersForDisplay.length} out of ${jsonChaptersMap.length} total chapters');
+      for (final entry in jsonChaptersMap.entries) {
+        final chapterId = entry.key;
+        final hasVideos = _chapterHasVideos[chapterId] ?? false;
+        Logger.debug('  - Chapter $chapterId: ${hasVideos ? "✅ has videos" : "❌ no videos"}');
+      }
+
+      // مرتب‌سازی بر اساس chapterId (عدد)
+      chaptersForDisplay.sort((a, b) {
+        final aNum = int.tryParse(a.chapterId) ?? 0;
+        final bNum = int.tryParse(b.chapterId) ?? 0;
+        return aNum.compareTo(bNum);
+      });
+
+      Logger.info('✅ [SUBJECT] Prepared ${chaptersForDisplay.length} chapters for display');
+
+      if (!mounted) return;
+      setState(() {
+        _jsonChapters = chaptersForDisplay;
+        _loading = false;
+      });
+    } catch (e) {
+      Logger.error('❌ [SUBJECT] Error loading chapters', e);
+      if (!mounted) return;
+      setState(() {
+        _jsonChapters = [];
+        _loading = false;
+      });
     }
   }
 
-  // تبدیل teacherId به نام استاد
-  String _getTeacherNameById(int teacherId) {
-    // فعلاً از نام‌های ثابت استفاده می‌کنیم
-    // در آینده می‌توان از دیتابیس واقعی استفاده کرد
-    final teacherNames = {
-      1: 'بابایی',
-      2: 'فخری',
-      3: 'احمدی',
-      4: 'رضایی',
-      5: 'کریمی',
-    };
-    return teacherNames[teacherId] ?? '';
+  String _getRealTeacherNames(String chapterId) {
+    final teachers = _chapterTeachers[chapterId] ?? [];
+    final hasVideos = _chapterHasVideos[chapterId] ?? false;
+
+    if (!hasVideos) {
+      return 'بدون محتوا';
+    }
+
+    if (teachers.isEmpty) {
+      return 'استاد نامشخص';
+    } else if (teachers.length == 1) {
+      return 'استاد ${teachers.first}';
+    } else {
+      return 'اساتید ${teachers.join(' و ')}';
+    }
   }
 
   @override
@@ -302,9 +323,9 @@ class _SubjectScreenState extends State<SubjectScreen> {
                   ),
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
-                      : _chapters == null
+                      : _jsonChapters == null
                       ? const SizedBox.shrink() // ← هنوز لود نشده، چیزی نشون نده
-                      : _chapters!.isEmpty
+                      : _jsonChapters!.isEmpty
                       ? SingleChildScrollView(
                           physics: AlwaysScrollableScrollPhysics(),
                           child: Center(
@@ -318,17 +339,19 @@ class _SubjectScreenState extends State<SubjectScreen> {
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          itemCount: _chapters!.length,
+                          itemCount: _jsonChapters!.length,
                           separatorBuilder: (context, index) =>
                               const SizedBox(height: 8),
                           itemBuilder: (ctx, i) {
-                            final ch = _chapters![i];
+                            final jsonChapter = _jsonChapters![i];
                             return _ChapterTile(
-                              chapter: ch,
+                              jsonChapter: jsonChapter,
                               subject: widget.subject!,
                               gradeId: widget.gradeId,
                               trackId: widget.trackId,
-                              teacherNames: _getRealTeacherNames(ch.id),
+                              teacherNames: _getRealTeacherNames(jsonChapter.chapterId),
+                              hasVideos: _chapterHasVideos[jsonChapter.chapterId] ?? false,
+                              chapterTypeLabel: _chapterTypeLabel,
                             );
                           },
                         ),
@@ -450,34 +473,25 @@ class _SubjectScreenState extends State<SubjectScreen> {
     );
   }
 
-  String _getRealTeacherNames(int chapterId) {
-    // گرفتن نام‌های واقعی اساتید از دیتا
-    final teachers = _chapterTeachers[chapterId] ?? [];
-
-    if (teachers.isEmpty) {
-      return 'استاد نامشخص';
-    } else if (teachers.length == 1) {
-      return 'استاد ${teachers.first}';
-    } else {
-      // اگر چند استاد داره، همه رو نمایش بده
-      return 'اساتید ${teachers.join(' و ')}';
-    }
-  }
 }
 
 class _ChapterTile extends StatelessWidget {
-  final Chapter chapter;
+  final JsonChapter jsonChapter;
   final Subject subject;
   final int gradeId;
   final int? trackId;
   final String teacherNames; // نام‌های واقعی اساتید
+  final bool hasVideos;
+  final String chapterTypeLabel;
 
   const _ChapterTile({
-    required this.chapter,
+    required this.jsonChapter,
     required this.subject,
     required this.gradeId,
     this.trackId,
     required this.teacherNames,
+    required this.hasVideos,
+    required this.chapterTypeLabel,
   });
 
   @override
@@ -497,13 +511,17 @@ class _ChapterTile extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () {
+          // ساخت Chapter قدیمی برای سازگاری با ChapterScreen
+          final legacyChapter = jsonChapter.toLegacyChapter();
           Navigator.of(context).pushNamed(
             '/chapter',
             arguments: {
-              'chapter': chapter,
+              'chapter': legacyChapter,
               'subject': subject,
               'gradeId': gradeId,
               'trackId': trackId,
+              'bookId': jsonChapter.bookId,
+              'chapterId': jsonChapter.chapterId,
             },
           );
         },
@@ -527,7 +545,7 @@ class _ChapterTile extends StatelessWidget {
                     ),
                     child: Center(
                       child: Text(
-                        _convertNumbersToPersian('فصل ${chapter.chapterOrder}'),
+                        _convertNumbersToPersian('$chapterTypeLabel ${jsonChapter.chapterId}'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
@@ -546,7 +564,7 @@ class _ChapterTile extends StatelessWidget {
                       children: [
                         // عنوان اصلی
                         Text(
-                          chapter.title,
+                          jsonChapter.title,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,

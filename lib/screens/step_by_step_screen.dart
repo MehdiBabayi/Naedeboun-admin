@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/content/step_by_step_pdf.dart';
 import '../models/content/subject.dart';
-import '../services/content/cached_content_service.dart';
+import '../services/content/content_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/pdf/pdf_service.dart';
 import '../providers/core/app_state_manager.dart';
@@ -25,7 +25,7 @@ class StepByStepScreen extends StatefulWidget {
 
 class _StepByStepScreenState extends State<StepByStepScreen> {
   List<Subject> _subjects = [];
-  Map<int, List<StepByStepPdf>> _pdfsBySubject = {};
+  Map<dynamic, List<StepByStepPdf>> _pdfsBySubject = {};
   bool _loading = true;
 
   @override
@@ -149,7 +149,9 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     // fieldOfStudy از نوع String است، فعلاً null می‌گذاریم
     final trackId = null;
 
-    final subjects = await CachedContentService.getSubjectsForUser(
+    // در پنل ادمین: مستقیماً از Supabase و BookCovers برای لیست دروس استفاده می‌کنیم
+    final contentService = ContentService(Supabase.instance.client);
+    final subjects = await contentService.getSubjectsForUser(
       gradeId: gradeId,
       trackId: trackId,
     );
@@ -173,7 +175,7 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     Logger.info('✅ [STEP-BY-STEP] ${pdfs.length} PDF پیدا شد');
 
     // گروه‌بندی PDF‌ها بر اساس درس
-    final pdfsBySubject = <int, List<StepByStepPdf>>{};
+    final pdfsBySubject = <dynamic, List<StepByStepPdf>>{};
     for (final pdf in pdfs) {
       pdfsBySubject.putIfAbsent(pdf.subjectId, () => []).add(pdf);
     }

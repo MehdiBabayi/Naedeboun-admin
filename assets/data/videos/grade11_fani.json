@@ -1,0 +1,21 @@
+{
+  "title": "یازدهم - فنی و حرفه‌ای",
+  "books": {
+    "1": {
+      "riazi": {
+        "title": "ریاضی",
+        "icon": "assets/images/icon-darsha/riazi1.png",
+        "cover": "assets/images/book-covers/grade11/fani/riazi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: تابع"
+          },
+          "2": {
+            "title": "فصل 2: مثلثات"
+          }
+        }
+      }
+    }
+  }
+}

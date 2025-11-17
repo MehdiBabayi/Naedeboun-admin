@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/content/provincial_sample_pdf.dart';
 import '../models/content/subject.dart';
-import '../services/content/cached_content_service.dart';
+import '../services/content/content_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/pdf/pdf_service.dart';
 import '../providers/core/app_state_manager.dart';
@@ -28,7 +28,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   List<ProvincialSamplePdf> _filteredPdfs = [];
   List<Subject> _subjects = [];
   bool _loading = true;
-  int _selectedSubjectId = 0; // 0 = همه
+  dynamic _selectedSubjectId = 0; // 0 = همه (یا '0')
 
   final List<Color> _colors = [
     Colors.green,
@@ -50,8 +50,9 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
     final gradeId = appState.authService.currentProfile?.grade ?? 7;
     final trackId = null;
 
-    // بارگذاری دروس
-    final subjects = await CachedContentService.getSubjectsForUser(
+    // بارگذاری دروس مستقیماً از Supabase از طریق ContentService (بدون Mini-Request)
+    final contentService = ContentService(Supabase.instance.client);
+    final subjects = await contentService.getSubjectsForUser(
       gradeId: gradeId,
       trackId: trackId,
     );
@@ -83,7 +84,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
     });
   }
 
-  void _filterBySubject(int subjectId) {
+  void _filterBySubject(dynamic subjectId) {
     setState(() {
       _selectedSubjectId = subjectId;
       if (subjectId == 0) {
@@ -96,24 +97,64 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
     });
   }
 
-  Color _getColorForSubject(int subjectId) {
-    return _colors[subjectId % _colors.length];
+  Color _getColorForSubject(dynamic subjectId) {
+    int index;
+    if (subjectId is int) {
+      index = subjectId;
+    } else if (subjectId is String) {
+      index = subjectId.hashCode;
+    } else {
+      index = 0;
+    }
+    index = index.abs() % _colors.length;
+    return _colors[index];
   }
 
-  String _getSubjectName(int subjectId) {
-    if (subjectId == 0) return 'همه';
-    final subject = _subjects.firstWhere(
-      (s) => s.id == subjectId,
-      orElse: () => Subject(
-        id: subjectId,
-        name: _fallbackSubjectNames[subjectId] ?? 'نامشخص',
-        slug: '',
-        iconPath: '',
-        bookCoverPath: '',
-        active: true,
-      ),
-    );
-    return subject.name;
+  String _getSubjectName(dynamic subjectId) {
+    if (subjectId == 0 || subjectId == '0') return 'همه';
+
+    // اگر subjectId عدد است (قدیمی)
+    if (subjectId is int) {
+      final subject = _subjects.firstWhere(
+        (s) => s.id == subjectId,
+        orElse: () => Subject(
+          id: subjectId,
+          name: _fallbackSubjectNames[subjectId] ?? 'نامشخص',
+          slug: '',
+          iconPath: '',
+          bookCoverPath: '',
+          active: true,
+        ),
+      );
+      return subject.name;
+    }
+
+    // اگر subjectId رشته است (جدید - bookId)
+    if (subjectId is String) {
+      // از _subjectNameToId استفاده کنیم اگر موجود باشد
+      final subjectNames = _subjects.map((s) => s.name).toSet();
+      // یا از یک mapping ساده استفاده کنیم
+      final bookIdToName = {
+        'riazi': 'ریاضی',
+        'fizik': 'فیزیک',
+        'shimi': 'شیمی',
+        'zist': 'زیست',
+        'olom': 'علوم',
+        'arabi': 'عربی',
+        'farsi': 'فارسی',
+        'dini': 'دینی',
+        'zaban': 'زبان',
+        'hendese': 'هندسه',
+        'gosaste': 'گسسته',
+        'amar': 'آمار',
+        'barname': 'برنامه‌نویسی',
+        'mantegh': 'منطق',
+        'payam': 'پیام',
+      };
+      return bookIdToName[subjectId] ?? subjectId;
+    }
+
+    return 'نامشخص';
   }
 
   // نام‌های پیش‌فرض در صورتی‌که درس در لیست subjects برنگردد
@@ -308,7 +349,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
     );
   }
 
-  Widget _buildSubjectTab(String name, int subjectId) {
+  Widget _buildSubjectTab(String name, dynamic subjectId) {
     final isSelected = _selectedSubjectId == subjectId;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -402,7 +443,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                           if (pdf.hasAnswerKey) const SizedBox(width: 8),
                           _buildTag('${pdf.publishYear}'),
                           const SizedBox(width: 8),
-                          _buildTag(pdf.designer),
+                          _buildTag(pdf.designer ?? ''),
                         ],
                       ),
                     ),

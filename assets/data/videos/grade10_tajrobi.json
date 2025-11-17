@@ -1,0 +1,34 @@
+{
+  "title": "دهم - تجربی",
+  "books": {
+    "1": {
+      "riazi": {
+        "title": "ریاضی",
+        "icon": "assets/images/icon-darsha/riazi1.png",
+        "cover": "assets/images/book-covers/grade10/tajrobi/riazi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: مجموعه‌ها"
+          },
+          "2": {
+            "title": "فصل 2: الگوها و دنباله‌ها"
+          }
+        }
+      }
+    },
+    "2": {
+      "zist": {
+        "title": "زیست",
+        "icon": "assets/images/icon-darsha/zist.png",
+        "cover": "assets/images/book-covers/grade10/tajrobi/zist.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: زیست‌شناسی و روش علمی"
+          }
+        }
+      }
+    }
+  }
+}

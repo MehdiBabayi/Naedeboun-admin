@@ -7,7 +7,7 @@ import '../../models/network/network_status_model.dart';
 import '../../models/auth/registration_stage.dart';
 import '../../services/config/config_service.dart';
 import '../../services/session_service.dart';
-import '../../services/mini_request/mini_request_service.dart';
+// Mini-Request در پنل ادمین غیرفعال شده است
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../utils/logger.dart';
 
@@ -142,43 +142,8 @@ class AppStateManager extends ChangeNotifier {
     _isInitialized = true;
     Logger.info('✅ [APP-STATE] Initialization completed');
 
-    // 🚀 اگر کاربر profile داره و اولین بار initialize می‌شود، Mini-Request رو trigger کن
-    if (_authService.currentProfile != null && !_hasTriggeredMiniRequest) {
-      Logger.info('🚀 [APP-STATE] Triggering Mini-Request after profile restore...');
-      Logger.debug(
-        '🔍 [APP-STATE] Profile grade: ${_authService.currentProfile?.grade}',
-      );
-      Logger.debug(
-        '🔍 [APP-STATE] Has session: ${Supabase.instance.client.auth.currentSession != null}',
-      );
-
-      try {
-        // Initialize Mini-Request first
-        await MiniRequestService.instance.init();
-        // Then check with force=true for initial launch
-        await MiniRequestService.instance.checkForUpdates(force: true);
-
-        // 🚀 مستقیماً book covers را prefetch کن
-        final profile = _authService.currentProfile;
-        if (profile != null && profile.grade != null) {
-          Logger.info(
-            '🚀 [APP-STATE] Prefetching book covers for grade: ${profile.grade}',
-          );
-          await MiniRequestService.instance.prefetchBookCoversForGrade(
-            profile.grade!,
-          );
-        }
-
-        _hasTriggeredMiniRequest = true; // Flag to prevent re-triggering
-        Logger.info('✅ [APP-STATE] Mini-Request completed successfully');
-      } catch (e) {
-        Logger.error('❌ [APP-STATE] Mini-Request failed', e);
-      }
-    } else {
-      Logger.info('⚠️ [APP-STATE] Skipping Mini-Request trigger');
-      Logger.info('   - Has profile: ${_authService.currentProfile != null}');
-      Logger.info('   - Already triggered: $_hasTriggeredMiniRequest');
-    }
+    // 🚫 Mini-Request در پنل ادمین غیرفعال شده است.
+    Logger.info('ℹ️ [APP-STATE] Mini-Request is disabled in admin panel');
 
     Logger.info('✅ [APP-STATE] ===== INITIALIZATION COMPLETED =====');
     notifyListeners();
@@ -192,36 +157,8 @@ class AppStateManager extends ChangeNotifier {
 
   /// 🚀 Trigger Mini-Request manually (برای استفاده بعد از login)
   Future<void> triggerMiniRequestAfterLogin() async {
-    Logger.info('🚀 [APP-STATE] ===== TRIGGERING MINI-REQUEST AFTER LOGIN =====');
-
-    if (_authService.currentProfile == null) {
-      Logger.info('⚠️ [APP-STATE] Cannot trigger Mini-Request - no profile');
-      return;
-    }
-
-    final profile = _authService.currentProfile;
-    Logger.debug(
-      '🔍 [APP-STATE] Profile found: ${profile?.firstName} ${profile?.lastName}',
-    );
-    Logger.debug('🔍 [APP-STATE] Profile grade: ${profile?.grade}');
-
-    try {
-      // 🚀 فقط و فقط متد runManually را با grade کاربر صدا بزن
-      Logger.info('🚀 [APP-STATE] Calling MiniRequestService.runManually...');
-      await MiniRequestService.instance.runManually(gradeId: profile!.grade);
-      Logger.info('✅ [APP-STATE] Manual Mini-Request completed successfully');
-
-      // 🚀 بعد از Mini-Request، book covers را prefetch کن
-      Logger.info('🚀 [APP-STATE] Prefetching book covers after Mini-Request...');
-      await MiniRequestService.instance.prefetchBookCoversForGrade(
-        profile.grade!,
-      );
-      Logger.info('✅ [APP-STATE] Book covers prefetch completed');
-    } catch (e) {
-      Logger.error('❌ [APP-STATE] Manual Mini-Request failed', e);
-      Logger.error('❌ [APP-STATE] Error type: ${e.runtimeType}', e);
-      Logger.error('❌ [APP-STATE] Stack trace', null, StackTrace.current);
-    }
+    // در پنل ادمین دیگر Mini-Request نداریم؛ این متد فقط برای سازگاری باقی مانده است.
+    Logger.info('ℹ️ [APP-STATE] triggerMiniRequestAfterLogin() called but Mini-Request is disabled');
   }
 
   /// تنظیم state سراسری

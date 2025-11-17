@@ -1,0 +1,62 @@
+{
+  "title": "دهم - ریاضی فیزیک",
+  "books": {
+    "1": {
+      "riazi": {
+        "title": "ریاضی",
+        "icon": "assets/images/icon-darsha/riazi1.png",
+        "cover": "assets/images/book-covers/grade10/riazi/riazi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: مجموعه‌ها"
+          },
+          "2": {
+            "title": "فصل 2: الگوها و دنباله‌ها"
+          },
+          "3": {
+            "title": "فصل 3: مثلثات"
+          },
+          "4": {
+            "title": "فصل 4: تابع"
+          }
+        }
+      }
+    },
+    "2": {
+      "fizik": {
+        "title": "فیزیک",
+        "icon": "assets/images/icon-darsha/fizik.png",
+        "cover": "assets/images/book-covers/grade10/riazi/fizik.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: اندازه‌گیری و بردارها"
+          },
+          "2": {
+            "title": "فصل 2: حرکت شناسی"
+          },
+          "3": {
+            "title": "فصل 3: دینامیک"
+          }
+        }
+      }
+    },
+    "3": {
+      "shimi": {
+        "title": "شیمی",
+        "icon": "assets/images/icon-darsha/shimi.png",
+        "cover": "assets/images/book-covers/grade10/riazi/shimi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: کیهان زادگاه الفبای هستی"
+          },
+          "2": {
+            "title": "فصل 2: ردپای گازها در زندگی"
+          }
+        }
+      }
+    }
+  }
+}

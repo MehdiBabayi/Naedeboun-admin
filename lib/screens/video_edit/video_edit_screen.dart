@@ -62,33 +62,21 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
         return;
       }
 
-      // دریافت نام استاد
-      final teacherData = await supabase
-          .from('teachers')
-          .select('name')
-          .eq('id', widget.video.teacherId)
-          .single();
-      
-      final teacherName = teacherData?['name'] as String? ?? 'نامشخص';
+      // دریافت نام استاد از خود ویدیو (مدل جدید teacher به صورت رشته است)
+      final teacherName = widget.video.teacher.isNotEmpty
+          ? widget.video.teacher
+          : 'نامشخص';
 
       setState(() {
         _teacherName = teacherName;
-        // پر کردن فرم با داده‌های ویدیو
-        _form.chapterTitle = widget.video.chapterTitle;
-        _form.chapterOrder = widget.video.chapterOrder;
-        _form.lessonTitle = widget.video.lessonTitle;
-        _form.lessonOrder = widget.video.lessonOrder;
-        _form.teacherName = teacherName; // پر کردن نام استاد در فرم
-        _form.style = widget.video.style;
-        _form.embedHtml = widget.video.embedHtml ?? '';
-        _form.notePdfUrl = widget.video.notePdfUrl ?? '';
-        _form.exercisePdfUrl = widget.video.exercisePdfUrl ?? '';
-        
-        // تبدیل duration_sec به ساعت، دقیقه، ثانیه
-        final totalSeconds = widget.video.durationSec;
-        _form.durationHours = totalSeconds ~/ 3600;
-        _form.durationMinutes = (totalSeconds % 3600) ~/ 60;
-        _form.durationSeconds = totalSeconds % 60;
+        // پر کردن فرم با داده‌های ویدیو (فیلدهای جدید)
+        _form.title = widget.video.lessonTitle; // از lessonTitle به عنوان title استفاده می‌کنیم
+        _form.stepNumber = widget.video.lessonOrder; // از lessonOrder به عنوان stepNumber استفاده می‌کنیم
+        _form.teacher = teacherName;
+        _form.type = widget.video.style == 'note' ? 'note' : widget.video.style == 'book' ? 'book' : 'exam';
+        _form.embedUrl = widget.video.embedHtml ?? '';
+        _form.pdfUrl = widget.video.notePdfUrl ?? widget.video.exercisePdfUrl; // یکی از PDFها را انتخاب می‌کنیم
+        _form.duration = widget.video.durationSec; // مستقیماً از durationSec استفاده می‌کنیم
         
         // تبدیل tags به string
         _form.tags = widget.video.tags.join(', ');

@@ -89,6 +89,32 @@ flutter:
     - assets/images/icon-darsha/
     - assets/images/icon/
     - assets/images/banners/
+    - assets/images/book-covers/
+    - assets/data/
+    - assets/data/grades.json
+    - assets/data/videos/
+    - assets/data/Countries/
+    - assets/images/book-covers/grade1/
+    - assets/images/book-covers/grade2/
+    - assets/images/book-covers/grade3/
+    - assets/images/book-covers/grade4/
+    - assets/images/book-covers/grade5/
+    - assets/images/book-covers/grade6/
+    - assets/images/book-covers/grade7/
+    - assets/images/book-covers/grade8/
+    - assets/images/book-covers/grade9/
+    - assets/images/book-covers/grade10/
+    - assets/images/book-covers/grade10/riazi/
+    - assets/images/book-covers/grade10/tajrobi/
+    - assets/images/book-covers/grade10/ensani/
+    - assets/images/book-covers/grade11/
+    - assets/images/book-covers/grade11/riazi/
+    - assets/images/book-covers/grade11/tajrobi/
+    - assets/images/book-covers/grade11/ensani/
+    - assets/images/book-covers/grade12/
+    - assets/images/book-covers/grade12/riazi/
+    - assets/images/book-covers/grade12/tajrobi/
+    - assets/images/book-covers/grade12/ensani/
     - assets/images/
     - lib/config.json
 

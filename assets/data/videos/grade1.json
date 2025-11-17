@@ -1,0 +1,24 @@
+{
+  "title": "پایه اول",
+  "books": {
+    "1": {
+      "farsi": {
+        "title": "فارسی",
+        "icon": "assets/images/icon-darsha/farsi.png",
+        "cover": "assets/images/book-covers/grade1/farsi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: خواندن و نوشتن"
+          },
+          "2": {
+            "title": "فصل 2: دستور زبان"
+          },
+          "3": {
+            "title": "فصل 3: نگارش"
+          }
+        }
+      }
+    }
+  }
+}

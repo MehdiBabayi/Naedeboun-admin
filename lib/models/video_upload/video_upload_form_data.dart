@@ -1,25 +1,37 @@
-/// مدل ساده داده‌های فرم آپلود ویدیو
+/// مدل داده‌های فرم آپلود/ویرایش ویدیو
+/// بخش «جدید» هم‌راستا با lesson_videos و بخش «قدیمی» برای سازگاری با صفحه ویرایش
 class VideoUploadFormData {
-  String? branch; // ابتدایی / متوسطه اول / متوسطه دوم
-  String? grade; // یکم ... دوازدهم
-  String? track; // ریاضی / تجربی / انسانی / بدون رشته
-  String? subject; // نام فارسی درس
-  String? subjectSlug; // اسلاگ درس
-  String? chapterTitle; // عنوان فصل
-  int? chapterOrder; // شماره فصل
-  String? style; // جزوه / نمونه سوال / کتاب درسی
-  String? lessonTitle; // عنوان درس
-  int? lessonOrder; // شماره درس
-  String? teacherName; // نام استاد
-  int? durationHours; // ساعت
-  int? durationMinutes; // دقیقه
-  int? durationSeconds; // ثانیه
-  String? tags; // تگ‌ها با کاما
-  String? embedHtml; // کد آپارات
-  String? notePdfUrl; // لینک PDF جزوه (اختیاری)
-  String? exercisePdfUrl; // لینک PDF نمونه سوال (اختیاری)
+  // ==== فیلدهای جدید مطابق lesson_videos ====
+  int? gradeId; // پایه (۱ تا ۲۱ مطابق grades.json)
+  String? bookId; // شناسه کتاب از JSON (مثل "riazi", "olom")
+  String? chapterId; // شناسه فصل از JSON (مثل "1", "2")
+  int? stepNumber; // شماره پله/مرحله در فصل
+  String? title; // عنوان ویدیو
+  String? type; // نوع محتوا: 'note' | 'book' | 'exam'
+  String? teacher; // نام استاد
+  String? embedUrl; // لینک embed ویدیو
+  String? directUrl; // لینک مستقیم ویدیو (اختیاری)
+  String? pdfUrl; // لینک PDF (یک فیلد واحد)
+  int? duration; // مدت زمان به ثانیه
+  bool? active; // وضعیت فعال/غیرفعال
+  String? thumbnailUrl; // لینک تصویر بندانگشتی (اختیاری)
 
-  /// تبدیل مدت زمان به ثانیه (برای ارسال به سرور)
+  // ==== فیلدهای قدیمی برای سازگاری با video_edit_screen (فقط برای مسیر ویرایش) ====
+  String? chapterTitle;
+  int? chapterOrder;
+  String? lessonTitle;
+  int? lessonOrder;
+  String? teacherName;
+  String? style;
+  String? embedHtml;
+  String? notePdfUrl;
+  String? exercisePdfUrl;
+  String? tags;
+  int? durationHours;
+  int? durationMinutes;
+  int? durationSeconds;
+
+  /// تبدیل مدت زمان به ثانیه (برای استفاده در مسیر قدیمی ویرایش)
   int get durationInSeconds {
     final h = durationHours ?? 0;
     final m = durationMinutes ?? 0;
@@ -27,7 +39,7 @@ class VideoUploadFormData {
     return h * 3600 + m * 60 + s;
   }
 
-  /// تبدیل تگ‌ها به لیست
+  /// تبدیل تگ‌ها به لیست (برای مسیر قدیمی ویرایش)
   List<String> get tagsList {
     if (tags == null || tags!.trim().isEmpty) return [];
     return tags!
@@ -37,19 +49,17 @@ class VideoUploadFormData {
         .toList();
   }
 
-  /// اعتبارسنجی حداقلی فرم (ساده)
+  /// اعتبارسنجی حداقلی فرم (برای مسیر جدید آپلود)
   String? validate() {
-    if (branch == null || branch!.isEmpty) return 'شاخه را انتخاب کنید';
-    if (grade == null || grade!.isEmpty) return 'پایه را انتخاب کنید';
-    if (subject == null || subject!.isEmpty) return 'درس را انتخاب کنید';
-    if (subjectSlug == null || subjectSlug!.isEmpty) return 'اسلاگ درس را انتخاب کنید';
-    if (chapterTitle == null || chapterTitle!.isEmpty) return 'عنوان فصل را وارد کنید';
-    if ((chapterOrder ?? 0) < 1) return 'شماره فصل را وارد کنید';
-    if (style == null || style!.isEmpty) return 'نوع محتوا را انتخاب کنید';
-    if (lessonTitle == null || lessonTitle!.isEmpty) return 'عنوان درس را وارد کنید';
-    if ((lessonOrder ?? 0) < 1) return 'شماره درس را وارد کنید';
-    if (teacherName == null || teacherName!.isEmpty) return 'نام استاد را وارد کنید';
-    if (durationInSeconds <= 0) return 'مدت زمان باید بیشتر از صفر باشد';
+    if (gradeId == null || gradeId! < 1 || gradeId! > 21) return 'پایه را انتخاب کنید';
+    if (bookId == null || bookId!.isEmpty) return 'درس را انتخاب کنید';
+    if (chapterId == null || chapterId!.isEmpty) return 'فصل را انتخاب کنید';
+    if (stepNumber == null || stepNumber! < 1) return 'شماره مرحله را وارد کنید';
+    if (title == null || title!.isEmpty) return 'عنوان ویدیو را وارد کنید';
+    if (type == null || type!.isEmpty) return 'نوع محتوا را انتخاب کنید';
+    if (teacher == null || teacher!.isEmpty) return 'نام استاد را وارد کنید';
+    if (embedUrl == null || embedUrl!.isEmpty) return 'لینک embed را وارد کنید';
+    if (duration == null || duration! <= 0) return 'مدت زمان را وارد کنید';
     return null;
   }
 }

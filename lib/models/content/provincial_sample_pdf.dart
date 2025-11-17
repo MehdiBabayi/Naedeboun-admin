@@ -1,33 +1,29 @@
 class ProvincialSamplePdf {
   final int id;
-  final String title;
-  final String level; // ابتدایی / متوسط اول / متوسط دوم
-  final int gradeId;
-  final int? trackId;
-  final int subjectId;
-  final int publishYear; // سال انتشار (شمسی)
-  final bool hasAnswerKey; // آیا پاسخنامه دارد؟
-  final String designer; // طراح سوال (استاد بابایی / هماهنگی کشوری / ...)
-  final String pdfUrl;
-  final double? fileSizeMb;
-  final int? pageCount;
-  final bool active;
+  final int gradeId; // پایه (۱ تا ۲۱)
+  final String bookId; // شناسه کتاب از JSON (مثل "riazi", "olom")
+  final String pdfTitle; // عنوان PDF
+  final String type; // نوع امتحان: 'first_term' | 'second_term' | 'midterm_1' | 'midterm_2'
+  final int? year; // سال برگزاری
+  final String? author; // نویسنده/مؤلف
+  final bool hasAnswer; // آیا پاسخنامه دارد؟
+  final double? size; // حجم فایل (MB)
+  final String pdfUrl; // لینک PDF
+  final bool active; // وضعیت فعال/غیرفعال
   final DateTime createdAt;
   final DateTime updatedAt;
 
   ProvincialSamplePdf({
     required this.id,
-    required this.title,
-    required this.level,
     required this.gradeId,
-    this.trackId,
-    required this.subjectId,
-    required this.publishYear,
-    required this.hasAnswerKey,
-    required this.designer,
+    required this.bookId,
+    required this.pdfTitle,
+    required this.type,
+    this.year,
+    this.author,
+    required this.hasAnswer,
+    this.size,
     required this.pdfUrl,
-    this.fileSizeMb,
-    this.pageCount,
     required this.active,
     required this.createdAt,
     required this.updatedAt,
@@ -36,19 +32,15 @@ class ProvincialSamplePdf {
   factory ProvincialSamplePdf.fromJson(Map<String, dynamic> json) {
     return ProvincialSamplePdf(
       id: json['id'] as int,
-      title: json['title'] as String,
-      level: json['level'] as String,
       gradeId: json['grade_id'] as int,
-      trackId: json['track_id'] as int?,
-      subjectId: json['subject_id'] as int,
-      publishYear: json['publish_year'] as int,
-      hasAnswerKey: (json['has_answer_key'] as bool?) ?? false,
-      designer: json['designer'] as String,
+      bookId: json['book_id'] as String,
+      pdfTitle: json['pdf_title'] as String,
+      type: json['type'] as String,
+      year: json['year'] as int?,
+      author: json['author'] as String?,
+      hasAnswer: (json['has_answer'] as bool?) ?? false,
+      size: json['size'] != null ? (json['size'] as num).toDouble() : null,
       pdfUrl: json['pdf_url'] as String,
-      fileSizeMb: json['file_size_mb'] != null
-          ? (json['file_size_mb'] as num).toDouble()
-          : null,
-      pageCount: json['page_count'] as int?,
       active: (json['active'] as bool?) ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -58,20 +50,36 @@ class ProvincialSamplePdf {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'title': title,
-      'level': level,
       'grade_id': gradeId,
-      'track_id': trackId,
-      'subject_id': subjectId,
-      'publish_year': publishYear,
-      'has_answer_key': hasAnswerKey,
-      'designer': designer,
+      'book_id': bookId,
+      'pdf_title': pdfTitle,
+      'type': type,
+      'year': year,
+      'author': author,
+      'has_answer': hasAnswer,
+      'size': size,
       'pdf_url': pdfUrl,
-      'file_size_mb': fileSizeMb,
-      'page_count': pageCount,
       'active': active,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
   }
+
+  // برای سازگاری با کدهای قدیمی که هنوز از title استفاده می‌کنند
+  String get title => pdfTitle;
+
+  // برای سازگاری با کدهای قدیمی که هنوز از hasAnswerKey استفاده می‌کنند
+  bool get hasAnswerKey => hasAnswer;
+
+  // برای سازگاری با کدهای قدیمی که هنوز از publishYear استفاده می‌کنند
+  int? get publishYear => year;
+
+  // برای سازگاری با کدهای قدیمی که هنوز از designer استفاده می‌کنند
+  String? get designer => author;
+
+  // برای سازگاری با کدهای قدیمی که هنوز از fileSizeMb استفاده می‌کنند
+  double? get fileSizeMb => size;
+
+  // برای سازگاری با کدهای قدیمی
+  dynamic get subjectId => bookId;
 }

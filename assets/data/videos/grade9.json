@@ -1,0 +1,21 @@
+{
+  "title": "پایه نهم",
+  "books": {
+    "1": {
+      "riazi": {
+        "title": "ریاضی",
+        "icon": "assets/images/icon-darsha/riazi1.png",
+        "cover": "assets/images/book-covers/grade9/riazi.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: مجموعه‌ها"
+          },
+          "2": {
+            "title": "فصل 2: عددهای حقیقی"
+          }
+        }
+      }
+    }
+  }
+}

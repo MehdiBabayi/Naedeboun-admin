@@ -1,89 +1,107 @@
 class LessonVideo {
-  final int id;
-  final int chapterId;  // ← جدید
-  final int chapterOrder;  // ← جدید
-  final String chapterTitle;  // ← جدید
-  final int lessonOrder;  // ← جدید
-  final String lessonTitle;  // ← جدید
-  final int teacherId;
-  final String style;
-  final String aparatUrl;
-  final int durationSec;
-  final int viewCount;
-  final List<String> tags;
-  final String contentStatus;
-  final bool active;
-  final String? embedHtml;
-  final bool allowLandscape;
-  final String? notePdfUrl; // PDF جزوه (اختیاری)
-  final String? exercisePdfUrl; // PDF نمونه‌سوال آموزشی (اختیاری)
+  final int videoId; // PRIMARY KEY, AUTO INCREMENT
+  final int gradeId; // پایه (۱ تا ۲۱)
+  final String bookId; // شناسه کتاب از JSON (مثل "riazi", "olom")
+  final String chapterId; // شناسه فصل از JSON (مثل "1", "2")
+  final int stepNumber; // شماره پله/مرحله در فصل
+  final String title; // عنوان ویدیو
+  final String type; // نوع محتوا: 'note'|'book'|'exam'
+  final String teacher; // نام استاد
+  final String? embedUrl; // لینک embed ویدیو
+  final String? directUrl; // لینک مستقیم ویدیو (اختیاری)
+  final String? pdfUrl; // لینک PDF (یک فیلد واحد)
+  final String? thumbnailUrl; // لینک تصویر بندانگشتی
+  final int duration; // مدت زمان به ثانیه
+  final int likesCount; // تعداد لایک‌ها
+  final int viewsCount; // تعداد بازدیدها
+  final bool active; // وضعیت فعال/غیرفعال
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   LessonVideo({
-    required this.id,
+    required this.videoId,
+    required this.gradeId,
+    required this.bookId,
     required this.chapterId,
-    required this.chapterOrder,
-    required this.chapterTitle,
-    required this.lessonOrder,
-    required this.lessonTitle,
-    required this.teacherId,
-    required this.style,
-    required this.aparatUrl,
-    required this.durationSec,
-    required this.viewCount,
-    required this.tags,
-    required this.contentStatus,
+    required this.stepNumber,
+    required this.title,
+    required this.type,
+    required this.teacher,
+    this.embedUrl,
+    this.directUrl,
+    this.pdfUrl,
+    this.thumbnailUrl,
+    required this.duration,
+    required this.likesCount,
+    required this.viewsCount,
     required this.active,
-    this.embedHtml,
-    this.allowLandscape = true,
-    this.notePdfUrl,
-    this.exercisePdfUrl,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   factory LessonVideo.fromJson(Map<String, dynamic> json) {
     return LessonVideo(
-      id: json['id'] as int,
-      chapterId: json['chapter_id'] as int,
-      chapterOrder: json['chapter_order'] as int,
-      chapterTitle: json['chapter_title'] as String,
-      lessonOrder: json['lesson_order'] as int,
-      lessonTitle: json['lesson_title'] as String,
-      teacherId: json['teacher_id'] as int,
-      style: json['style'] as String,
-      aparatUrl: json['aparat_url'] as String,
-      durationSec: (json['duration_sec'] as num).toInt(),
-      viewCount: (json['view_count'] as num).toInt(),
-      tags: ((json['tags'] as List?) ?? const [])
-          .map((e) => e.toString())
-          .toList(),
-      contentStatus: json['content_status'] as String,
+      videoId: json['video_id'] as int,
+      gradeId: json['grade_id'] as int,
+      bookId: json['book_id'] as String,
+      chapterId: json['chapter_id'] as String,
+      stepNumber: json['step_number'] as int,
+      title: json['title'] as String,
+      type: json['type'] as String,
+      teacher: json['teacher'] as String,
+      embedUrl: json['embed_url'] as String?,
+      directUrl: json['direct_url'] as String?,
+      pdfUrl: json['pdf_url'] as String?,
+      thumbnailUrl: json['thumbnail_url'] as String?,
+      duration: json['duration'] as int,
+      likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
+      viewsCount: (json['views_count'] as num?)?.toInt() ?? 0,
       active: (json['active'] as bool?) ?? true,
-      embedHtml: json['embed_html'] as String?,
-      allowLandscape: (json['allow_landscape'] as bool?) ?? true,
-      notePdfUrl: json['note_pdf_url'] as String?,
-      exercisePdfUrl: json['exercise_pdf_url'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'video_id': videoId,
+      'grade_id': gradeId,
+      'book_id': bookId,
       'chapter_id': chapterId,
-      'chapter_order': chapterOrder,
-      'chapter_title': chapterTitle,
-      'lesson_order': lessonOrder,
-      'lesson_title': lessonTitle,
-      'teacher_id': teacherId,
-      'style': style,
-      'aparat_url': aparatUrl,
-      'duration_sec': durationSec,
-      'view_count': viewCount,
-      'tags': tags,
-      'content_status': contentStatus,
+      'step_number': stepNumber,
+      'title': title,
+      'type': type,
+      'teacher': teacher,
+      'embed_url': embedUrl,
+      'direct_url': directUrl,
+      'pdf_url': pdfUrl,
+      'thumbnail_url': thumbnailUrl,
+      'duration': duration,
+      'likes_count': likesCount,
+      'views_count': viewsCount,
       'active': active,
-      'embed_html': embedHtml,
-      'allow_landscape': allowLandscape,
-      'note_pdf_url': notePdfUrl,
-      'exercise_pdf_url': exercisePdfUrl,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
     };
   }
+
+  // برای سازگاری با کدهای قدیمی که هنوز از id استفاده می‌کنند
+  int get id => videoId;
+
+  // getterهای سازگاری برای فیلدهای قدیمی
+  String get style => type;
+  String get lessonTitle => title;
+  int? get teacherId => null; // باید از جداول دیگر گرفته شود
+  String? get notePdfUrl => pdfUrl;
+  String? get exercisePdfUrl => pdfUrl;
+  int get durationSec => duration;
+  int? get chapterOrder => null; // باید از جداول دیگر گرفته شود
+  String get chapterTitle => ""; // باید از جداول دیگر گرفته شود
+  int get lessonOrder => stepNumber;
+  String get contentStatus => "published";
+  String? get aparatUrl => embedUrl;
+  String? get embedHtml => embedUrl;
+  int get viewCount => viewsCount;
+  List<String> get tags => [];
+  bool get allowLandscape => true;
 }
