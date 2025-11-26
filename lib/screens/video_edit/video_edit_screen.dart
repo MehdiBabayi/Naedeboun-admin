@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../utils/logger.dart';
@@ -24,6 +26,24 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   bool _loading = true;
   DateTime? _createdAt;
   DateTime? _updatedAt;
+  bool _dropdownsInitialized = false;
+  bool _gradesLoading = true;
+  bool _booksLoading = false;
+  bool _chaptersLoading = false;
+  Map<int, _GradeConfig> _gradesConfig = {};
+  List<_DropdownOption<int>> _gradeOptions = [];
+  List<_DropdownOption<String>> _bookOptions = [];
+  List<_DropdownOption<String>> _chapterOptions = [];
+  Map<String, Map<String, String>> _chaptersByBookId = {};
+  int? _selectedGradeId;
+  String? _selectedBookId;
+  String? _selectedChapterId;
+  String? _selectedType;
+  static const List<_DropdownOption<String>> _contentTypeOptions = [
+    _DropdownOption<String>(value: 'note', label: 'جزوه'),
+    _DropdownOption<String>(value: 'book', label: 'کتاب درسی'),
+    _DropdownOption<String>(value: 'exam', label: 'نمونه سوال'),
+  ];
 
   @override
   void initState() {
@@ -71,9 +91,14 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
 
         _createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
         _updatedAt = DateTime.tryParse(row['updated_at']?.toString() ?? '');
+        _selectedType = _form.type;
 
         _loading = false;
       });
+
+      if (mounted) {
+        await _initializeDropdowns();
+      }
 
       Logger.info('✅ [VIDEO-EDIT] داده‌های lesson_videos بارگذاری شد');
     } catch (e) {
@@ -91,6 +116,255 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
         );
       }
     }
+  }
+
+  Future<void> _initializeDropdowns() async {
+    if (_dropdownsInitialized) return;
+    await _loadGradeOptions();
+    final initialGradeId = _form.gradeId;
+    final initialBookId = _form.bookId?.isNotEmpty == true ? _form.bookId : null;
+    final initialChapterId =
+        _form.chapterId?.isNotEmpty == true ? _form.chapterId : null;
+
+    if (initialGradeId != null &&
+        _gradesConfig.containsKey(initialGradeId)) {
+      await _handleGradeChange(
+        initialGradeId,
+        isInitial: true,
+        initialBookId: initialBookId,
+        initialChapterId: initialChapterId,
+      );
+    } else {
+      setState(() {
+        _gradesLoading = false;
+      });
+    }
+
+    _dropdownsInitialized = true;
+  }
+
+  Future<void> _loadGradeOptions() async {
+    if (_gradeOptions.isNotEmpty) {
+      setState(() {
+        _gradesLoading = false;
+      });
+      return;
+    }
+    try {
+      final jsonString =
+          await rootBundle.loadString('assets/data/grades.json');
+      final Map<String, dynamic> gradesMap = jsonDecode(jsonString);
+      final List<_DropdownOption<int>> options = [];
+      final Map<int, _GradeConfig> configs = {};
+
+      gradesMap.forEach((idString, value) {
+        final gradeId = int.tryParse(idString);
+        if (gradeId == null) return;
+        if (value is! Map<String, dynamic>) return;
+        final title = (value['title'] as String? ?? '').trim();
+        final path = (value['path'] as String? ?? '').trim();
+        if (path.isEmpty) return;
+        configs[gradeId] = _GradeConfig(title: title, path: path);
+        options.add(
+          _DropdownOption<int>(
+            value: gradeId,
+            label: title.isNotEmpty ? title : 'پایه $gradeId',
+          ),
+        );
+      });
+
+      options.sort((a, b) => a.value.compareTo(b.value));
+
+      setState(() {
+        _gradesConfig = configs;
+        _gradeOptions = options;
+        _gradesLoading = false;
+      });
+    } catch (e) {
+      Logger.error('❌ [VIDEO-EDIT] خطا در خواندن grades.json', e);
+      setState(() {
+        _gradesLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleGradeChange(
+    int gradeId, {
+    bool isInitial = false,
+    String? initialBookId,
+    String? initialChapterId,
+  }) async {
+    if (!_gradesConfig.containsKey(gradeId)) {
+      Logger.error('❌ [VIDEO-EDIT] gradeId $gradeId در فایل grades.json پیدا نشد');
+      return;
+    }
+
+    setState(() {
+      _selectedGradeId = gradeId;
+      _form.gradeId = gradeId;
+      _booksLoading = true;
+      if (!isInitial) {
+        _selectedBookId = null;
+        _form.bookId = '';
+        _selectedChapterId = null;
+        _form.chapterId = '';
+        _chapterOptions = [];
+      }
+    });
+
+    final gradeConfig = _gradesConfig[gradeId]!;
+    final bookResult = await _loadBooksForGrade(gradeConfig.path);
+
+    if (!mounted) return;
+
+    setState(() {
+      _booksLoading = false;
+    });
+
+    if (bookResult == null) {
+      return;
+    }
+
+    final nextBookId = isInitial ? initialBookId : null;
+    if (nextBookId != null &&
+        bookResult.chaptersByBookId.containsKey(nextBookId)) {
+      await _handleBookChange(
+        nextBookId,
+        isInitial: true,
+        initialChapterId: initialChapterId,
+        chaptersByBookId: bookResult.chaptersByBookId,
+      );
+    }
+  }
+
+  Future<_BookLoadResult?> _loadBooksForGrade(String assetPath) async {
+    try {
+      final jsonString = await rootBundle.loadString(assetPath);
+      final Map<String, dynamic> gradeJson = jsonDecode(jsonString);
+      final books = gradeJson['books'] as Map<String, dynamic>? ?? {};
+      final List<_DropdownOption<String>> bookOptions = [];
+      final Map<String, Map<String, String>> chaptersByBookId = {};
+
+      for (final bookEntry in books.entries) {
+        final bookId = bookEntry.key;
+        final bookValue = bookEntry.value;
+        if (bookValue is! Map<String, dynamic>) continue;
+
+        for (final slugEntry in bookValue.entries) {
+          final Map<String, dynamic> bookMeta =
+              Map<String, dynamic>.from(slugEntry.value as Map);
+          final title = (bookMeta['title'] as String? ?? '').trim();
+          final displayTitle =
+              title.isNotEmpty ? title : slugEntry.key.toString();
+
+          bookOptions.add(
+            _DropdownOption<String>(
+              value: bookId,
+              label: displayTitle,
+            ),
+          );
+
+          final Map<String, String> chapterMap = {};
+          final chapters = bookMeta['chapters'] as Map<String, dynamic>? ?? {};
+          for (final chapterEntry in chapters.entries) {
+            final chapterTitle = chapterEntry.value is Map
+                ? (chapterEntry.value['title'] as String? ??
+                    chapterEntry.value.toString())
+                : chapterEntry.value.toString();
+            chapterMap[chapterEntry.key.toString()] =
+                chapterTitle.trim().isEmpty
+                    ? 'فصل ${chapterEntry.key}'
+                    : chapterTitle.trim();
+          }
+          chaptersByBookId[bookId] = chapterMap;
+        }
+      }
+
+      bookOptions.sort(
+        (a, b) => a.label.compareTo(b.label),
+      );
+
+      setState(() {
+        _bookOptions = bookOptions;
+        _chaptersByBookId = chaptersByBookId;
+      });
+
+      return _BookLoadResult(
+        options: bookOptions,
+        chaptersByBookId: chaptersByBookId,
+      );
+    } catch (e) {
+      Logger.error(
+        '❌ [VIDEO-EDIT] خطا در خواندن فایل ویدیوهای پایه: $assetPath',
+        e,
+      );
+      setState(() {
+        _bookOptions = [];
+        _chaptersByBookId = {};
+      });
+      return null;
+    }
+  }
+
+  Future<void> _handleBookChange(
+    String bookId, {
+    bool isInitial = false,
+    String? initialChapterId,
+    Map<String, Map<String, String>>? chaptersByBookId,
+  }) async {
+    if (chaptersByBookId != null) {
+      _chaptersByBookId = chaptersByBookId;
+    }
+    final chaptersMap = _chaptersByBookId[bookId] ?? {};
+
+    setState(() {
+      _selectedBookId = bookId;
+      _form.bookId = bookId;
+      _chaptersLoading = true;
+    });
+
+    final options = chaptersMap.entries
+        .map(
+          (entry) => _DropdownOption<String>(
+            value: entry.key,
+            label: entry.value,
+          ),
+        )
+        .toList();
+
+    options.sort((a, b) => a.value.compareTo(b.value));
+
+    setState(() {
+      _chapterOptions = options;
+      _chaptersLoading = false;
+    });
+
+    final targetChapterId = isInitial ? initialChapterId : null;
+    if (targetChapterId != null &&
+        chaptersMap.containsKey(targetChapterId)) {
+      _handleChapterChange(targetChapterId, isInitial: true);
+    } else if (!isInitial) {
+      _handleChapterChange('', clearOnly: true);
+    }
+  }
+
+  void _handleChapterChange(
+    String chapterId, {
+    bool isInitial = false,
+    bool clearOnly = false,
+  }) {
+    if (clearOnly) {
+      setState(() {
+        _selectedChapterId = null;
+        _form.chapterId = '';
+      });
+      return;
+    }
+    if (chapterId.isEmpty) return;
+    setState(() {
+      _selectedChapterId = chapterId;
+      _form.chapterId = chapterId;
+    });
   }
 
   @override
@@ -152,31 +426,11 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
 
               const Divider(height: 32),
 
-              _buildNumberField(
-                label: 'پایه (grade_id)',
-                initialValue: _form.gradeId,
-                onSaved: (v) => _form.gradeId = v,
-                hint: 'مثال: 9',
-                onChanged: (v) => _form.gradeId = v,
-              ),
+              _buildGradeDropdown(),
 
-              _buildTextField(
-                label: 'شناسه درس (book_id)',
-                initialValue: _form.bookId,
-                onSaved: (v) => _form.bookId = v?.toString().trim() ?? '',
-                hint: 'مثال: riazi یا 1',
-                maxLength: 50,
-                onChanged: (v) => _form.bookId = v.toString().trim(),
-              ),
+              _buildBookDropdown(),
 
-              _buildTextField(
-                label: 'شناسه فصل (chapter_id)',
-                initialValue: _form.chapterId,
-                onSaved: (v) => _form.chapterId = v?.toString().trim() ?? '',
-                hint: 'مثال: 1',
-                maxLength: 50,
-                onChanged: (v) => _form.chapterId = v.toString().trim(),
-              ),
+              _buildChapterDropdown(),
 
               _buildNumberField(
                 label: 'شماره مرحله (step_number)',
@@ -195,14 +449,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
                 onChanged: (v) => _form.title = v,
               ),
 
-              _buildTextField(
-                label: 'نوع محتوا (type)',
-                initialValue: _form.type,
-                onSaved: (v) => _form.type = v?.trim(),
-                hint: 'note / book / exam',
-                maxLength: 50,
-                onChanged: (v) => _form.type = v.trim(),
-              ),
+              _buildTypeDropdown(),
 
               _buildTextField(
                 label: 'نام استاد (teacher)',
@@ -469,6 +716,202 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
     );
   }
 
+  Widget _buildGradeDropdown() {
+    if (_gradesLoading) {
+      return _buildLoadingField('پایه (grade_id)');
+    }
+    if (_gradeOptions.isEmpty) {
+      return _buildDisabledField(
+        'پایه (grade_id)',
+        'اطلاعات پایه‌ها در دسترس نیست',
+      );
+    }
+    final currentValue = _gradeOptions.any((opt) => opt.value == _selectedGradeId)
+        ? _selectedGradeId
+        : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: DropdownButtonFormField<int>(
+        value: currentValue,
+        decoration: _dropdownDecoration('پایه (grade_id)'),
+        isExpanded: true,
+        items: _gradeOptions
+            .map(
+              (option) => DropdownMenuItem<int>(
+                value: option.value,
+                child: Text(option.label),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value != null) {
+            _handleGradeChange(value);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildBookDropdown() {
+    if (_selectedGradeId == null) {
+      return _buildDisabledField(
+        'درس (book_id)',
+        'ابتدا پایه را انتخاب کنید',
+      );
+    }
+    if (_booksLoading) {
+      return _buildLoadingField('درس (book_id)');
+    }
+    if (_bookOptions.isEmpty) {
+      return _buildDisabledField(
+        'درس (book_id)',
+        'هیچ درسی برای این پایه یافت نشد',
+      );
+    }
+    final currentValue = _bookOptions.any((opt) => opt.value == _selectedBookId)
+        ? _selectedBookId
+        : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: DropdownButtonFormField<String>(
+        value: currentValue,
+        decoration: _dropdownDecoration('درس (book_id)'),
+        isExpanded: true,
+        items: _bookOptions
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option.value,
+                child: Text(option.label),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value != null) {
+            _handleBookChange(value);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildChapterDropdown() {
+    if (_selectedBookId == null || _selectedBookId!.isEmpty) {
+      return _buildDisabledField(
+        'شناسه فصل (chapter_id)',
+        'ابتدا درس را انتخاب کنید',
+      );
+    }
+    if (_chaptersLoading) {
+      return _buildLoadingField('شناسه فصل (chapter_id)');
+    }
+    if (_chapterOptions.isEmpty) {
+      return _buildDisabledField(
+        'شناسه فصل (chapter_id)',
+        'فصلی برای این درس ثبت نشده است',
+      );
+    }
+    final currentValue =
+        _chapterOptions.any((opt) => opt.value == _selectedChapterId)
+            ? _selectedChapterId
+            : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: DropdownButtonFormField<String>(
+        value: currentValue,
+        decoration: _dropdownDecoration('شناسه فصل (chapter_id)'),
+        isExpanded: true,
+        items: _chapterOptions
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option.value,
+                child: Text(option.label),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value != null) {
+            _handleChapterChange(value);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildTypeDropdown() {
+    final currentValue = _contentTypeOptions
+            .any((option) => option.value == _selectedType)
+        ? _selectedType
+        : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: DropdownButtonFormField<String>(
+        value: currentValue,
+        decoration: _dropdownDecoration('نوع محتوا (type)'),
+        isExpanded: true,
+        items: _contentTypeOptions
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option.value,
+                child: Text(option.label),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value != null) {
+            setState(() {
+              _selectedType = value;
+              _form.type = value;
+            });
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadingField(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: InputDecorator(
+        decoration: _dropdownDecoration(label),
+        child: Row(
+          children: const [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 8),
+            Text('در حال بارگذاری...'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDisabledField(String label, String message) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: InputDecorator(
+        decoration: _dropdownDecoration(label),
+        child: Text(
+          message,
+          style: const TextStyle(
+            fontFamily: 'IRANSansXFaNum',
+            color: Colors.grey,
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _dropdownDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(fontFamily: 'IRANSansXFaNum'),
+      border: const OutlineInputBorder(),
+    );
+  }
+
   Widget _buildDurationField({
     required String label,
     required void Function(int?) onSaved,
@@ -560,8 +1003,6 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
       err = 'نوع محتوا را وارد کنید';
     } else if (_form.teacher == null || _form.teacher!.isEmpty) {
       err = 'نام استاد را وارد کنید';
-    } else if (_form.embedUrl == null || _form.embedUrl!.isEmpty) {
-      err = 'Embed URL را وارد کنید';
     } else if (_form.durationInSeconds <= 0) {
       err = 'مدت زمان باید بیشتر از صفر باشد';
     }
@@ -623,7 +1064,6 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
         'title': _form.title,
         'type': normalizedType,
         'teacher': _form.teacher,
-        'embed_url': _form.embedUrl,
         'direct_url': _form.directUrl?.isNotEmpty == true
             ? _form.directUrl
             : null,
@@ -636,6 +1076,11 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
         'views_count': _form.viewsCount ?? 0,
         'active': _form.active ?? true,
       };
+
+      final trimmedEmbedUrl = _form.embedUrl?.trim() ?? '';
+      if (trimmedEmbedUrl.isNotEmpty) {
+        updates['embed_url'] = trimmedEmbedUrl;
+      }
 
       await _service.updateVideo(
         videoId: widget.video.videoId,
@@ -670,4 +1115,28 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
       if (mounted) setState(() => _submitting = false);
     }
   }
+}
+
+class _GradeConfig {
+  final String title;
+  final String path;
+
+  const _GradeConfig({required this.title, required this.path});
+}
+
+class _DropdownOption<T> {
+  final T value;
+  final String label;
+
+  const _DropdownOption({required this.value, required this.label});
+}
+
+class _BookLoadResult {
+  final List<_DropdownOption<String>> options;
+  final Map<String, Map<String, String>> chaptersByBookId;
+
+  const _BookLoadResult({
+    required this.options,
+    required this.chaptersByBookId,
+  });
 }
