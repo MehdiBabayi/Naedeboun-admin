@@ -18,6 +18,8 @@ interface UpdateContentInput {
     pdf_url?: string | null;
     thumbnail_url?: string | null;
     duration?: number;
+    likes_count?: number;
+    views_count?: number;
     active?: boolean;
   };
 }
@@ -99,6 +101,8 @@ serve(async (req) => {
     if (updates.pdf_url !== undefined) updatePayload.pdf_url = updates.pdf_url;
     if (updates.thumbnail_url !== undefined) updatePayload.thumbnail_url = updates.thumbnail_url;
     if (updates.duration !== undefined) updatePayload.duration = updates.duration;
+    if (updates.likes_count !== undefined) updatePayload.likes_count = updates.likes_count;
+    if (updates.views_count !== undefined) updatePayload.views_count = updates.views_count;
     if (updates.active !== undefined) updatePayload.active = updates.active;
 
     // Update video
@@ -108,6 +112,8 @@ serve(async (req) => {
       .eq('video_id', video_id)
       .select()
       .single();
+
+    console.log('🔍 UPDATE result:', { updatedVideo, updateError });
 
     if (updateError) {
       console.error('❌ Update error:', updateError);
@@ -123,25 +129,32 @@ serve(async (req) => {
     }
 
     // Increment change_count for the grade
+    // موقتاً کامنت شده برای تست - اگر خطا رفت، مشکل از RPC است
     const gradeId = updates.grade_id ?? existingVideo.grade_id;
     if (gradeId) {
-      const { error: changeCountError } = await supabaseClient.rpc('increment_change_count', {
-        table_name: 'lesson_videos',
-        grade_id: gradeId,
-      });
+      // const { error: changeCountError } = await supabaseClient.rpc('increment_change_count', {
+      //   table_name: 'lesson_videos',
+      //   grade_id: gradeId,
+      // });
 
-      if (changeCountError) {
-        console.error('❌ Change count error:', changeCountError);
-        // Don't fail the request for this, just log it
-      } else {
-        console.log('✅ Change count incremented for lesson_videos');
-      }
+      // if (changeCountError) {
+      //   console.error('❌ Change count error:', changeCountError);
+      //   // Don't fail the request for this, just log it
+      // } else {
+      //   console.log('✅ Change count incremented for lesson_videos');
+      // }
+      console.log('⚠️ RPC increment_change_count موقتاً غیرفعال است برای تست');
     }
 
     console.log('✅ Video updated successfully:', updatedVideo.video_id);
+    console.log('📦 Final response:', { 
+      message: 'ویدیو با موفقیت به‌روزرسانی شد', 
+      video: updatedVideo 
+    });
 
     return new Response(
       JSON.stringify({
+        success: true,
         message: 'ویدیو با موفقیت به‌روزرسانی شد',
         video: updatedVideo,
       }),

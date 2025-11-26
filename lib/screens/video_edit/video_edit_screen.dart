@@ -10,10 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class VideoEditScreen extends StatefulWidget {
   final LessonVideo video;
 
-  const VideoEditScreen({
-    super.key,
-    required this.video,
-  });
+  const VideoEditScreen({super.key, required this.video});
 
   @override
   State<VideoEditScreen> createState() => _VideoEditScreenState();
@@ -25,7 +22,8 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   final _service = VideoEditService();
   bool _submitting = false;
   bool _loading = true;
-  String? _teacherName; // نام استاد برای نمایش
+  DateTime? _createdAt;
+  DateTime? _updatedAt;
 
   @override
   void initState() {
@@ -36,62 +34,58 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   /// بارگذاری داده‌های ویدیو و پر کردن فرم
   Future<void> _loadVideoData() async {
     try {
-      Logger.info('📥 [VIDEO-EDIT] بارگذاری داده‌های ویدیو ID: ${widget.video.id}');
+      Logger.info(
+        '📥 [VIDEO-EDIT] بارگذاری داده‌های ویدیو ID: ${widget.video.id}',
+      );
 
-      // دریافت اطلاعات کامل از Supabase
       final supabase = Supabase.instance.client;
-      
-      // دریافت chapter برای گرفتن اطلاعات بیشتر
-      final chapterData = await supabase
-          .from('chapters')
-          .select('id, title, chapter_order, subject_offer_id')
-          .eq('id', widget.video.chapterId)
+      final response = await supabase
+          .from('lesson_videos')
+          .select('*')
+          .eq('video_id', widget.video.videoId)
           .single();
-      
-      if (chapterData == null) {
-        Logger.error('❌ [VIDEO-EDIT] فصل یافت نشد');
-        if (mounted) {
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ خطا: فصل یافت نشد', textDirection: TextDirection.rtl),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
 
-      // دریافت نام استاد از خود ویدیو (مدل جدید teacher به صورت رشته است)
-      final teacherName = widget.video.teacher.isNotEmpty
-          ? widget.video.teacher
-          : 'نامشخص';
+      final row = Map<String, dynamic>.from(response as Map);
+      final duration = (row['duration'] as num?)?.toInt() ?? 0;
 
       setState(() {
-        _teacherName = teacherName;
-        // پر کردن فرم با داده‌های ویدیو (فیلدهای جدید)
-        _form.title = widget.video.lessonTitle; // از lessonTitle به عنوان title استفاده می‌کنیم
-        _form.stepNumber = widget.video.lessonOrder; // از lessonOrder به عنوان stepNumber استفاده می‌کنیم
-        _form.teacher = teacherName;
-        _form.type = widget.video.style == 'note' ? 'note' : widget.video.style == 'book' ? 'book' : 'exam';
-        _form.embedUrl = widget.video.embedHtml ?? '';
-        _form.pdfUrl = widget.video.notePdfUrl ?? widget.video.exercisePdfUrl; // یکی از PDFها را انتخاب می‌کنیم
-        _form.duration = widget.video.durationSec; // مستقیماً از durationSec استفاده می‌کنیم
-        
-        // تبدیل tags به string
-        _form.tags = widget.video.tags.join(', ');
-        
+        _form.gradeId = (row['grade_id'] as num?)?.toInt();
+        // book_id و chapter_id در جدول از نوع text هستند - همیشه به string تبدیل می‌کنیم
+        _form.bookId = row['book_id']?.toString().trim() ?? '';
+        _form.chapterId = row['chapter_id']?.toString().trim() ?? '';
+        _form.stepNumber = (row['step_number'] as num?)?.toInt();
+        _form.title = row['title'] as String?;
+        _form.type = row['type'] as String?;
+        _form.teacher = row['teacher'] as String?;
+        _form.embedUrl = row['embed_url'] as String?;
+        _form.directUrl = row['direct_url'] as String?;
+        _form.pdfUrl = row['pdf_url'] as String?;
+        _form.thumbnailUrl = row['thumbnail_url'] as String?;
+        _form.duration = duration;
+        _form.durationHours = duration ~/ 3600;
+        _form.durationMinutes = (duration % 3600) ~/ 60;
+        _form.durationSeconds = duration % 60;
+        _form.likesCount = (row['likes_count'] as num?)?.toInt();
+        _form.viewsCount = (row['views_count'] as num?)?.toInt();
+        _form.active = row['active'] as bool? ?? true;
+
+        _createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '');
+        _updatedAt = DateTime.tryParse(row['updated_at']?.toString() ?? '');
+
         _loading = false;
       });
 
-      Logger.info('✅ [VIDEO-EDIT] داده‌های ویدیو بارگذاری شد');
+      Logger.info('✅ [VIDEO-EDIT] داده‌های lesson_videos بارگذاری شد');
     } catch (e) {
       Logger.error('❌ [VIDEO-EDIT] خطا در بارگذاری داده‌های ویدیو', e);
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ خطا: ${e.toString()}', textDirection: TextDirection.rtl),
+            content: Text(
+              '❌ خطا: ${e.toString()}',
+              textDirection: TextDirection.rtl,
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -120,9 +114,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
               style: TextStyle(fontFamily: 'IRANSansXFaNum'),
             ),
           ),
-          body: const Center(
-            child: CircularProgressIndicator(),
-          ),
+          body: const Center(child: CircularProgressIndicator()),
         ),
       );
     }
@@ -149,65 +141,114 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             children: [
-              // نمایش اطلاعات فعلی (read-only)
-              _buildInfoCard('شناسه ویدیو', widget.video.id.toString()),
-              
+              _buildInfoCard('شناسه ویدیو', widget.video.videoId.toString()),
+              if (_createdAt != null)
+                _buildInfoCard('تاریخ ایجاد', _createdAt!.toIso8601String()),
+              if (_updatedAt != null)
+                _buildInfoCard(
+                  'تاریخ بروزرسانی',
+                  _updatedAt!.toIso8601String(),
+                ),
+
               const Divider(height: 32),
-              
-              // فیلدهای قابل ویرایش
-              // عنوان فصل (100 کاراکتر - استاندارد برای عنوان)
-              _buildTextField(
-                label: 'عنوان فصل',
-                initialValue: _form.chapterTitle,
-                onSaved: (v) => _form.chapterTitle = v,
-                hint: 'مثال: فصل اول - اعداد صحیح',
-                maxLength: 100,
-              ),
-              
-              // شماره فصل
+
               _buildNumberField(
-                label: 'شماره فصل',
-                initialValue: _form.chapterOrder,
-                onSaved: (v) => _form.chapterOrder = v,
-                hint: 'مثال: 1',
-              ),
-              
-              // عنوان درس (100 کاراکتر - استاندارد برای عنوان)
-              _buildTextField(
-                label: 'عنوان درس',
-                initialValue: _form.lessonTitle,
-                onSaved: (v) => _form.lessonTitle = v,
-                hint: 'مثال: درس اول - جمع اعداد',
-                maxLength: 100,
-              ),
-              
-              // شماره درس
-              _buildNumberField(
-                label: 'شماره درس',
-                initialValue: _form.lessonOrder,
-                onSaved: (v) => _form.lessonOrder = v,
-                hint: 'مثال: 1',
-              ),
-              
-              // نام استاد (50 کاراکتر - کافی برای نام)
-              _buildTextField(
-                label: 'نام استاد',
-                initialValue: _teacherName ?? '',
-                onSaved: (v) => _form.teacherName = v,
-                hint: 'مثال: استاد احمدی',
-                maxLength: 50,
-              ),
-              
-              // نوع محتوا (50 کاراکتر - فقط چند کلمه)
-              _buildTextField(
-                label: 'نوع محتوا (جزوه/نمونه سوال/کتاب درسی)',
-                initialValue: _form.style,
-                onSaved: (v) => _form.style = v,
-                hint: 'جزوه / کتاب درسی / نمونه سوال',
-                maxLength: 50,
+                label: 'پایه (grade_id)',
+                initialValue: _form.gradeId,
+                onSaved: (v) => _form.gradeId = v,
+                hint: 'مثال: 9',
+                onChanged: (v) => _form.gradeId = v,
               ),
 
-              // مدت زمان
+              _buildTextField(
+                label: 'شناسه درس (book_id)',
+                initialValue: _form.bookId,
+                onSaved: (v) => _form.bookId = v?.toString().trim() ?? '',
+                hint: 'مثال: riazi یا 1',
+                maxLength: 50,
+                onChanged: (v) => _form.bookId = v.toString().trim(),
+              ),
+
+              _buildTextField(
+                label: 'شناسه فصل (chapter_id)',
+                initialValue: _form.chapterId,
+                onSaved: (v) => _form.chapterId = v?.toString().trim() ?? '',
+                hint: 'مثال: 1',
+                maxLength: 50,
+                onChanged: (v) => _form.chapterId = v.toString().trim(),
+              ),
+
+              _buildNumberField(
+                label: 'شماره مرحله (step_number)',
+                initialValue: _form.stepNumber,
+                onSaved: (v) => _form.stepNumber = v,
+                hint: 'مثال: 1',
+                onChanged: (v) => _form.stepNumber = v,
+              ),
+
+              _buildTextField(
+                label: 'عنوان ویدیو (title)',
+                initialValue: _form.title,
+                onSaved: (v) => _form.title = v,
+                hint: 'مثال: مجموعه‌ها - بخش اول',
+                maxLength: 150,
+                onChanged: (v) => _form.title = v,
+              ),
+
+              _buildTextField(
+                label: 'نوع محتوا (type)',
+                initialValue: _form.type,
+                onSaved: (v) => _form.type = v?.trim(),
+                hint: 'note / book / exam',
+                maxLength: 50,
+                onChanged: (v) => _form.type = v.trim(),
+              ),
+
+              _buildTextField(
+                label: 'نام استاد (teacher)',
+                initialValue: _form.teacher,
+                onSaved: (v) => _form.teacher = v?.trim(),
+                hint: 'مثال: استاد احمدی',
+                maxLength: 80,
+                onChanged: (v) => _form.teacher = v.trim(),
+              ),
+
+              _buildTextField(
+                label: 'Embed URL',
+                initialValue: _form.embedUrl,
+                onSaved: (v) => _form.embedUrl = v,
+                hint: 'https://www.aparat.com/v/....',
+                maxLength: 2000,
+                onChanged: (v) => _form.embedUrl = v,
+              ),
+
+              _buildTextField(
+                label: 'Direct URL (اختیاری)',
+                initialValue: _form.directUrl,
+                onSaved: (v) => _form.directUrl = v,
+                hint: 'https://cdn.example.com/video.mp4',
+                maxLength: 500,
+                onChanged: (v) => _form.directUrl = v,
+              ),
+
+              _buildTextField(
+                label: 'PDF URL (اختیاری)',
+                initialValue: _form.pdfUrl,
+                onSaved: (v) => _form.pdfUrl = v,
+                hint: 'https://example.com/file.pdf',
+                maxLength: 500,
+                onChanged: (v) => _form.pdfUrl = v,
+              ),
+
+              _buildTextField(
+                label: 'Thumbnail URL (اختیاری)',
+                initialValue: _form.thumbnailUrl,
+                onSaved: (v) => _form.thumbnailUrl = v,
+                hint: 'https://example.com/thumb.png',
+                maxLength: 500,
+                onChanged: (v) => _form.thumbnailUrl = v,
+              ),
+
               Row(
                 children: [
                   Expanded(
@@ -218,6 +259,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
                       hint: '0',
                       minValue: 0,
                       maxValue: 23,
+                      onChanged: (value) => _form.durationHours = value,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -229,6 +271,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
                       hint: '0-59',
                       minValue: 0,
                       maxValue: 59,
+                      onChanged: (value) => _form.durationMinutes = value,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -240,44 +283,40 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
                       hint: '0-59',
                       minValue: 0,
                       maxValue: 59,
+                      onChanged: (value) => _form.durationSeconds = value,
                     ),
                   ),
                 ],
               ),
 
-              // سایر فیلدها
-              // تگ‌ها (200 کاراکتر - ممکنه چند تگ باشه)
-              _buildTextField(
-                label: 'تگ‌ها (با کاما جدا کنید)',
-                initialValue: _form.tags,
-                onSaved: (v) => _form.tags = v,
-                hint: 'مثال: حد, پایه ۹, تابع',
-                maxLength: 200,
+              _buildNumberField(
+                label: 'تعداد لایک (likes_count)',
+                initialValue: _form.likesCount ?? 0,
+                onSaved: (v) => _form.likesCount = v,
+                hint: 'مثال: 120',
+                minValue: 0,
+                isRequired: false,
+                onChanged: (v) => _form.likesCount = v,
               ),
-              // Embed HTML (2000 کاراکتر - کد HTML ممکنه طولانی باشه)
-              _buildTextField(
-                label: 'Embed HTML آپارات (اختیاری)',
-                initialValue: _form.embedHtml,
-                onSaved: (v) => _form.embedHtml = v,
-                hint: '<script src="https://www.aparat.com/embed/..." ></script>',
-                maxLines: 3,
-                maxLength: 2000,
+
+              _buildNumberField(
+                label: 'تعداد بازدید (views_count)',
+                initialValue: _form.viewsCount ?? 0,
+                onSaved: (v) => _form.viewsCount = v,
+                hint: 'مثال: 4500',
+                minValue: 0,
+                isRequired: false,
+                onChanged: (v) => _form.viewsCount = v,
               ),
-              // لینک PDF (500 کاراکتر - URL ممکنه طولانی باشه)
-              _buildTextField(
-                label: 'لینک PDF جزوه (اختیاری)',
-                initialValue: _form.notePdfUrl,
-                onSaved: (v) => _form.notePdfUrl = v,
-                hint: 'https://...',
-                maxLength: 500,
-              ),
-              // لینک PDF (500 کاراکتر - URL ممکنه طولانی باشه)
-              _buildTextField(
-                label: 'لینک PDF نمونه سوال (اختیاری)',
-                initialValue: _form.exercisePdfUrl,
-                onSaved: (v) => _form.exercisePdfUrl = v,
-                hint: 'https://...',
-                maxLength: 500,
+
+              SwitchListTile(
+                title: const Text(
+                  'فعال باشد؟',
+                  style: TextStyle(fontFamily: 'IRANSansXFaNum'),
+                ),
+                value: _form.active ?? true,
+                onChanged: (value) => setState(() => _form.active = value),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 0),
               ),
 
               const SizedBox(height: 16),
@@ -342,6 +381,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   Widget _buildTextField({
     required String label,
     required void Function(String?) onSaved,
+    void Function(String)? onChanged,
     String? hint,
     String? initialValue,
     int maxLines = 1,
@@ -363,6 +403,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
         textAlign: TextAlign.right,
         maxLines: maxLines,
         onSaved: onSaved,
+        onChanged: onChanged,
       ),
     );
   }
@@ -370,8 +411,11 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   Widget _buildNumberField({
     required String label,
     required void Function(int?) onSaved,
+    void Function(int?)? onChanged,
     String? hint,
     int? initialValue,
+    int minValue = 1,
+    bool isRequired = true,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -394,28 +438,30 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
           final cleaned = v?.trim() ?? '';
           if (cleaned.isEmpty) {
             onSaved(null);
+            if (onChanged != null) onChanged(null);
           } else {
             final parsed = int.tryParse(cleaned);
             if (parsed != null) {
               onSaved(parsed);
+              if (onChanged != null) onChanged(parsed);
             } else {
               Logger.error('❌ [VIDEO-EDIT] خطا در parse کردن عدد: $cleaned');
               onSaved(null);
+              if (onChanged != null) onChanged(null);
             }
           }
         },
         validator: (v) {
-          // Validation برای اطمینان از اینکه عدد معتبر است
           final cleaned = v?.trim() ?? '';
           if (cleaned.isEmpty) {
-            return 'این فیلد الزامی است';
+            return isRequired ? 'این فیلد الزامی است' : null;
           }
           final parsed = int.tryParse(cleaned);
           if (parsed == null) {
             return 'لطفاً یک عدد معتبر وارد کنید';
           }
-          if (parsed < 1) {
-            return 'عدد باید بزرگتر یا مساوی 1 باشد';
+          if (parsed < minValue) {
+            return 'عدد باید بزرگتر یا مساوی $minValue باشد';
           }
           return null;
         },
@@ -426,6 +472,7 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
   Widget _buildDurationField({
     required String label,
     required void Function(int?) onSaved,
+    void Function(int)? onChanged,
     String? hint,
     required int initialValue,
     int minValue = 0,
@@ -452,13 +499,16 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
           final cleaned = v?.trim() ?? '';
           if (cleaned.isEmpty) {
             onSaved(minValue);
+            if (onChanged != null) onChanged(minValue);
           } else {
             final parsed = int.tryParse(cleaned);
             if (parsed != null) {
               onSaved(parsed);
+              if (onChanged != null) onChanged(parsed);
             } else {
               Logger.error('❌ [VIDEO-EDIT] خطا در parse کردن عدد: $cleaned');
               onSaved(minValue);
+              if (onChanged != null) onChanged(minValue);
             }
           }
         },
@@ -490,31 +540,37 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
       Logger.error('❌ [VIDEO-EDIT] Validation فرم نامعتبر است');
       return;
     }
-    
+
     // ذخیره مقادیر فرم
     _formKey.currentState?.save();
 
     // اعتبارسنجی فیلدهای قابل ویرایش (بعد از save)
     String? err;
-    if (_form.chapterTitle == null || _form.chapterTitle!.isEmpty) {
-      err = 'عنوان فصل را وارد کنید';
-    } else if (_form.chapterOrder == null || _form.chapterOrder! < 1) {
-      err = 'شماره فصل را وارد کنید (باید >= 1 باشد)';
-    } else if (_form.lessonTitle == null || _form.lessonTitle!.isEmpty) {
-      err = 'عنوان درس را وارد کنید';
-    } else if (_form.lessonOrder == null || _form.lessonOrder! < 1) {
-      err = 'شماره درس را وارد کنید (باید >= 1 باشد)';
-    } else if (_form.teacherName == null || _form.teacherName!.isEmpty) {
-      err = 'نام استاد را وارد کنید';
-    } else if (_form.style == null || _form.style!.isEmpty) {
+    if (_form.gradeId == null || _form.gradeId! < 1) {
+      err = 'پایه را وارد کنید';
+    } else if (_form.bookId == null || _form.bookId!.isEmpty) {
+      err = 'شناسه درس (book_id) را وارد کنید';
+    } else if (_form.chapterId == null || _form.chapterId!.isEmpty) {
+      err = 'شناسه فصل (chapter_id) را وارد کنید';
+    } else if (_form.stepNumber == null || _form.stepNumber! < 1) {
+      err = 'شماره مرحله (step_number) را وارد کنید (>=1)';
+    } else if (_form.title == null || _form.title!.isEmpty) {
+      err = 'عنوان ویدیو را وارد کنید';
+    } else if (_form.type == null || _form.type!.isEmpty) {
       err = 'نوع محتوا را وارد کنید';
+    } else if (_form.teacher == null || _form.teacher!.isEmpty) {
+      err = 'نام استاد را وارد کنید';
+    } else if (_form.embedUrl == null || _form.embedUrl!.isEmpty) {
+      err = 'Embed URL را وارد کنید';
     } else if (_form.durationInSeconds <= 0) {
       err = 'مدت زمان باید بیشتر از صفر باشد';
     }
-    
+
     if (err != null) {
       Logger.error('❌ [VIDEO-EDIT] Validation خطا: $err');
-      Logger.error('❌ [VIDEO-EDIT] chapterOrder: ${_form.chapterOrder}, lessonOrder: ${_form.lessonOrder}');
+      Logger.error(
+        '❌ [VIDEO-EDIT] chapterOrder: ${_form.chapterOrder}, lessonOrder: ${_form.lessonOrder}',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(err, textDirection: TextDirection.rtl)),
       );
@@ -523,36 +579,66 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
 
     setState(() => _submitting = true);
     try {
-      Logger.info('🔄 [VIDEO-EDIT] شروع به‌روزرسانی ویدیو ID: ${widget.video.id}');
+      Logger.info(
+        '🔄 [VIDEO-EDIT] شروع به‌روزرسانی ویدیو ID: ${widget.video.id}',
+      );
 
-      // تبدیل style به فرمت استاندارد
+      // تبدیل type به فرمت استاندارد
       final styleMap = {
         'note': 'note',
         'book': 'book',
-        'sample': 'sample',
+        'exam': 'exam',
+        'sample': 'exam',
         'جزوه': 'note',
         'کتاب درسی': 'book',
-        'نمونه سوال': 'sample',
+        'نمونه سوال': 'exam',
       };
-      final normalizedStyle = styleMap[_form.style] ?? 'note';
+      final normalizedType = styleMap[_form.type?.toLowerCase()] ?? 'note';
 
-      // آماده‌سازی updates
+      // تبدیل book_id و chapter_id به string (مطابق schema جدول - text)
+      // استفاده از toString() برای اطمینان از تبدیل به string حتی اگر عدد باشد
+      final normalizedBookId = (_form.bookId?.toString() ?? '').trim();
+      final normalizedChapterId = (_form.chapterId?.toString() ?? '').trim();
+
+      // لاگ برای دیباگ - بررسی نوع داده
+      Logger.info(
+        '🔍 [VIDEO-EDIT] normalizedBookId: "$normalizedBookId" (type: ${normalizedBookId.runtimeType})',
+      );
+      Logger.info(
+        '🔍 [VIDEO-EDIT] normalizedChapterId: "$normalizedChapterId" (type: ${normalizedChapterId.runtimeType})',
+      );
+
+      // آماده‌سازی updates (بدون video_id - video_id در root payload است)
+      // اطمینان از اینکه book_id و chapter_id همیشه string هستند (نه int)
       final updates = <String, dynamic>{
-        'chapter_title': _form.chapterTitle,
-        'chapter_order': _form.chapterOrder,
-        'lesson_title': _form.lessonTitle,
-        'lesson_order': _form.lessonOrder,
-        'teacher_name': _form.teacherName,
-        'style': normalizedStyle,
-        'duration_sec': _form.durationInSeconds,
-        'tags': _form.tagsList,
-        'embed_html': _form.embedHtml?.isEmpty ?? true ? null : _form.embedHtml,
-        'note_pdf_url': _form.notePdfUrl?.isEmpty ?? true ? null : _form.notePdfUrl,
-        'exercise_pdf_url': _form.exercisePdfUrl?.isEmpty ?? true ? null : _form.exercisePdfUrl,
+        'grade_id': _form.gradeId,
+        'book_id': normalizedBookId.isEmpty
+            ? ''
+            : normalizedBookId.toString(), // text در schema - اطمینان از string
+        'chapter_id': normalizedChapterId.isEmpty
+            ? ''
+            : normalizedChapterId
+                  .toString(), // text در schema - اطمینان از string
+        'step_number': _form.stepNumber,
+        'title': _form.title,
+        'type': normalizedType,
+        'teacher': _form.teacher,
+        'embed_url': _form.embedUrl,
+        'direct_url': _form.directUrl?.isNotEmpty == true
+            ? _form.directUrl
+            : null,
+        'pdf_url': _form.pdfUrl?.isNotEmpty == true ? _form.pdfUrl : null,
+        'thumbnail_url': _form.thumbnailUrl?.isNotEmpty == true
+            ? _form.thumbnailUrl
+            : null,
+        'duration': _form.durationInSeconds,
+        'likes_count': _form.likesCount ?? 0,
+        'views_count': _form.viewsCount ?? 0,
+        'active': _form.active ?? true,
       };
 
       await _service.updateVideo(
-        lessonVideoId: widget.video.id,
+        videoId: widget.video.videoId,
         updates: updates,
       );
 
@@ -560,7 +646,10 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
       Logger.info('✅ [VIDEO-EDIT] ویدیو با موفقیت به‌روزرسانی شد');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ ویدیو با موفقیت به‌روزرسانی شد', textDirection: TextDirection.rtl),
+          content: Text(
+            '✅ ویدیو با موفقیت به‌روزرسانی شد',
+            textDirection: TextDirection.rtl,
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -570,7 +659,10 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ خطا: ${e.toString()}', textDirection: TextDirection.rtl),
+          content: Text(
+            '❌ خطا: ${e.toString()}',
+            textDirection: TextDirection.rtl,
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -579,4 +671,3 @@ class _VideoEditScreenState extends State<VideoEditScreen> {
     }
   }
 }
-

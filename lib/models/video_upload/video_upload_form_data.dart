@@ -15,6 +15,8 @@ class VideoUploadFormData {
   int? duration; // مدت زمان به ثانیه
   bool? active; // وضعیت فعال/غیرفعال
   String? thumbnailUrl; // لینک تصویر بندانگشتی (اختیاری)
+  int? likesCount;
+  int? viewsCount;
 
   // ==== فیلدهای قدیمی برای سازگاری با video_edit_screen (فقط برای مسیر ویرایش) ====
   String? chapterTitle;
