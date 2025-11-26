@@ -173,27 +173,77 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     
     Logger.info('✅ [STEP-BY-STEP] ${pdfs.length} PDF پیدا شد');
 
-    // گروه‌بندی PDF‌ها بر اساس bookId (slug) - نه id
+    // خواندن icon و cover از JSON - پشتیبانی از bookId عددی ("1", "2") و slug ("riazi", "arabi")
+    final gradeJson = await contentService.loadGradeJson(gradeId);
+    final Map<String, Map<String, String>> metaByBookId = {}; // bookId -> {icon, cover, title, slug}
+    final Map<String, String> bookIdToSlug = {}; // bookId -> slug واقعی
+    
+    if (gradeJson != null) {
+      final books = gradeJson['books'] as Map<String, dynamic>? ?? {};
+      for (final entry in books.entries) {
+        final bookIndex = entry.key; // مثل "1", "2"
+        final bookMap = entry.value as Map<String, dynamic>;
+        for (final subjectEntry in bookMap.entries) {
+          final bookSlug = subjectEntry.key; // مثل "riazi", "arabi"
+          final subjectMap = subjectEntry.value as Map<String, dynamic>;
+          final icon = (subjectMap['icon'] as String? ?? '').trim();
+          final cover = (subjectMap['cover'] as String? ?? '').trim();
+          final title = (subjectMap['title'] as String? ?? '').trim();
+          
+          // ذخیره برای هر دو bookIndex و bookSlug
+          final meta = {
+            'icon': icon,
+            'cover': cover,
+            'title': title,
+            'slug': bookSlug,
+          };
+          metaByBookId[bookIndex] = meta; // "1" -> meta
+          metaByBookId[bookSlug] = meta;  // "riazi" -> meta
+          
+          // نگاشت bookId عددی به slug
+          bookIdToSlug[bookIndex] = bookSlug; // "1" -> "riazi"
+          bookIdToSlug[bookSlug] = bookSlug;   // "riazi" -> "riazi"
+        }
+      }
+    }
+
+    // گروه‌بندی PDF‌ها بر اساس slug واقعی (نه bookId عددی)
     final pdfsBySubject = <String, List<StepByStepPdf>>{};
     for (final pdf in pdfs) {
-      // pdf.subjectId در واقع bookId (String) است
+      // pdf.subjectId در واقع bookId (String) است که ممکن است عددی ("1") یا slug ("riazi") باشد
       final bookId = pdf.subjectId;
-      pdfsBySubject.putIfAbsent(bookId, () => []).add(pdf);
+      // تبدیل bookId به slug واقعی
+      final resolvedSlug = bookIdToSlug[bookId] ?? bookId;
+      pdfsBySubject.putIfAbsent(resolvedSlug, () => []).add(pdf);
     }
 
     // اطمینان از حضور همه دروسی که PDF دارند در لیست subjects
-    final pdfBookIds = pdfsBySubject.keys.toSet();
+    final pdfSlugs = pdfsBySubject.keys.toSet();
     final existingSlugs = subjects.map((s) => s.slug).where((s) => s.isNotEmpty).toSet();
-    for (final bookId in pdfBookIds) {
-      if (!existingSlugs.contains(bookId)) {
-        // اگر bookId در subjects نبود، یک Subject جدید با slug=bookId بساز
+    
+    for (final slug in pdfSlugs) {
+      if (!existingSlugs.contains(slug)) {
+        // پیدا کردن meta از JSON با استفاده از slug
+        final meta = metaByBookId[slug];
+        final title = meta?['title'] ?? _getSubjectNameFromBookId(slug);
+        final iconFromJson = meta?['icon'];
+        final coverFromJson = meta?['cover'];
+        
+        // استفاده از icon از JSON اگر موجود باشد
+        final iconPath = iconFromJson != null && iconFromJson.isNotEmpty
+            ? iconFromJson
+            : 'assets/images/icon-darsha/$slug.png';
+        final coverPath = coverFromJson != null && coverFromJson.isNotEmpty
+            ? coverFromJson
+            : '';
+        
         subjects.add(
           Subject(
             id: subjects.length + 1000, // یک id موقت
-            name: _getSubjectNameFromBookId(bookId),
-            slug: bookId,
-            iconPath: 'assets/images/icon-darsha/$bookId.png',
-            bookCoverPath: '',
+            name: title,
+            slug: slug,
+            iconPath: iconPath,
+            bookCoverPath: coverPath,
             active: true,
           ),
         );
@@ -276,15 +326,15 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
   };
 
   String _getSubjectIconPath(Subject subject) {
+    // اولویت با iconPath که از JSON آمده است
     if (subject.iconPath.isNotEmpty && subject.iconPath.startsWith('assets/')) {
       return subject.iconPath;
     }
-    if (subject.iconPath.isNotEmpty) {
-      return 'assets/images/icon-darsha/${subject.iconPath}';
-    }
+    // اگر iconPath خالی است اما slug داریم، از slug استفاده کن
     if (subject.slug.isNotEmpty) {
       return 'assets/images/icon-darsha/${subject.slug}.png';
     }
+    // fallback برای id (قدیمی)
     final fallback = _fallbackSubjectIcons[subject.id];
     if (fallback != null) {
       return 'assets/images/icon-darsha/$fallback';

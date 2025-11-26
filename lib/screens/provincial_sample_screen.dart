@@ -29,6 +29,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   List<Subject> _subjects = [];
   bool _loading = true;
   dynamic _selectedSubjectId = 0; // 0 = همه، String = bookId
+  Map<String, String> _bookIdToName = {}; // bookId -> title از JSON
 
   final List<Color> _colors = [
     Colors.green,
@@ -57,6 +58,29 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
       trackId: trackId,
     );
 
+    // خواندن title از JSON برای bookId‌ها (پشتیبانی از عدد و slug)
+    final gradeJson = await contentService.loadGradeJson(gradeId);
+    final Map<String, String> bookIdToName = {};
+    
+    if (gradeJson != null) {
+      final books = gradeJson['books'] as Map<String, dynamic>? ?? {};
+      for (final entry in books.entries) {
+        final bookIndex = entry.key; // مثل "1", "2"
+        final bookMap = entry.value as Map<String, dynamic>;
+        for (final subjectEntry in bookMap.entries) {
+          final bookSlug = subjectEntry.key; // مثل "riazi", "arabi"
+          final subjectMap = subjectEntry.value as Map<String, dynamic>;
+          final title = (subjectMap['title'] as String? ?? '').trim();
+          
+          // ذخیره برای هر دو bookIndex و bookSlug
+          if (title.isNotEmpty) {
+            bookIdToName[bookIndex] = title; // "1" -> "ریاضی"
+            bookIdToName[bookSlug] = title;  // "riazi" -> "ریاضی"
+          }
+        }
+      }
+    }
+
     // ✅ تغییر: مستقیماً از Supabase بخوان (بدون Mini-Request)
     final supabase = Supabase.instance.client;
     Logger.info('📄 [PROVINCIAL] بارگذاری PDF‌ها برای grade_id: $gradeId, track_id: $trackId');
@@ -79,6 +103,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
       _subjects = subjects;
       _pdfs = pdfs;
       _filteredPdfs = pdfs;
+      _bookIdToName = bookIdToName; // ذخیره map برای استفاده در _getSubjectName
       _loading = false;
     });
   }
@@ -134,63 +159,61 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   String _getSubjectName(dynamic subjectId) {
     if (subjectId == 0 || subjectId == '0') return 'همه';
 
-    // اگر subjectId رشته است (bookId - استاندارد جدید)
-    if (subjectId is String) {
-      // ابتدا سعی کن از لیست subjects پیدا کنی
-      final subject = _subjects.firstWhere(
-        (s) => s.slug == subjectId,
-        orElse: () => Subject(
-          id: 0,
-          name: '',
-          slug: subjectId,
-          iconPath: '',
-          bookCoverPath: '',
-          active: true,
-        ),
-      );
-      if (subject.name.isNotEmpty) {
-        return subject.name;
-      }
-      // اگر پیدا نشد، از mapping استفاده کن
-      const bookIdToName = {
-        'riazi': 'ریاضی',
-        'fizik': 'فیزیک',
-        'shimi': 'شیمی',
-        'zist': 'زیست',
-        'olom': 'علوم',
-        'arabi': 'عربی',
-        'farsi': 'فارسی',
-        'dini': 'دینی',
-        'zaban': 'زبان',
-        'englisi': 'انگلیسی',
-        'hendese': 'هندسه',
-        'gosaste': 'گسسته',
-        'amar': 'آمار',
-        'barname': 'برنامه‌نویسی',
-        'mantegh': 'منطق',
-        'payam': 'پیام',
-        'quran': 'قرآن',
-      };
-      return bookIdToName[subjectId] ?? subjectId;
-    }
-
-    // اگر subjectId عدد است (قدیمی - برای سازگاری)
-    if (subjectId is int) {
-      final subject = _subjects.firstWhere(
-        (s) => s.id == subjectId,
-        orElse: () => Subject(
-          id: subjectId,
-          name: _fallbackSubjectNames[subjectId] ?? 'نامشخص',
-          slug: '',
-          iconPath: '',
-          bookCoverPath: '',
-          active: true,
-        ),
-      );
+    // تبدیل subjectId به String برای پردازش یکسان
+    final bookId = subjectId.toString();
+    
+    // ابتدا سعی کن از لیست subjects پیدا کنی
+    final subject = _subjects.firstWhere(
+      (s) => s.slug == bookId || s.id.toString() == bookId,
+      orElse: () => Subject(
+        id: 0,
+        name: '',
+        slug: bookId,
+        iconPath: '',
+        bookCoverPath: '',
+        active: true,
+      ),
+    );
+    
+    // اگر نام از subjects پیدا شد، برگردان
+    if (subject.name.isNotEmpty) {
       return subject.name;
     }
-
-    return 'نامشخص';
+    
+    // اگر پیدا نشد، از JSON بخوان (مثل step_by_step_screen)
+    return _getSubjectNameFromJson(bookId);
+  }
+  
+  // خواندن نام درس از JSON بر اساس bookId (عدد یا slug)
+  String _getSubjectNameFromJson(String bookId) {
+    // استفاده از map که در _load() از JSON ساخته شده
+    final nameFromJson = _bookIdToName[bookId];
+    if (nameFromJson != null && nameFromJson.isNotEmpty) {
+      return nameFromJson;
+    }
+    
+    // اگر در JSON پیدا نشد، از mapping پیش‌فرض استفاده کن
+    const bookIdToName = {
+      'riazi': 'ریاضی',
+      'fizik': 'فیزیک',
+      'shimi': 'شیمی',
+      'zist': 'زیست',
+      'olom': 'علوم',
+      'arabi': 'عربی',
+      'farsi': 'فارسی',
+      'dini': 'دینی',
+      'zaban': 'زبان',
+      'englisi': 'انگلیسی',
+      'hendese': 'هندسه',
+      'gosaste': 'گسسته',
+      'amar': 'آمار',
+      'barname': 'برنامه‌نویسی',
+      'mantegh': 'منطق',
+      'payam': 'پیام',
+      'quran': 'قرآن',
+    };
+    
+    return bookIdToName[bookId] ?? bookId;
   }
 
   // نام‌های پیش‌فرض در صورتی‌که درس در لیست subjects برنگردد
