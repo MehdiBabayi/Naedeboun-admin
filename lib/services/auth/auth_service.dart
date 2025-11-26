@@ -9,7 +9,6 @@ import 'package:nardeboun/const/api_keys.dart';
 import 'package:nardeboun/services/config/config_service.dart';
 import 'package:nardeboun/services/session_service.dart';
 import 'package:nardeboun/services/device/device_id_service.dart';
-import 'package:nardeboun/providers/core/app_state_manager.dart';
 // import 'package:intl/intl.dart';
 
 class AuthService extends ChangeNotifier {
@@ -63,22 +62,7 @@ class AuthService extends ChangeNotifier {
       await _saveSessionToStorage(session);
       await _fetchUserProfile(session.user.id);
 
-      // 🚀 Trigger Mini-Request after successful login
-      Logger.info(
-        '🚀 [AUTH LISTENER] ===== TRIGGERING MINI-REQUEST AFTER LOGIN =====',
-      );
-      try {
-        // Use AppStateManager singleton
-        Logger.info(
-          '🔍 [AUTH LISTENER] Calling AppStateManager.triggerMiniRequestAfterLogin...',
-        );
-        await AppStateManager().triggerMiniRequestAfterLogin();
-        Logger.info('✅ [AUTH LISTENER] Mini-Request trigger completed');
-      } catch (e) {
-        Logger.error('❌ [AUTH LISTENER] Failed to trigger Mini-Request', e);
-        Logger.info('❌ [AUTH LISTENER] Error type: ${e.runtimeType}');
-      }
-
+      // Mini-Request حذف شده است - دیگر نیازی به trigger نیست
       return;
     }
 
@@ -107,20 +91,7 @@ class AuthService extends ChangeNotifier {
       // نگه دار _currentUser null تا صفحات auth-only روی supabase.currentSession تکیه کنند
       _currentUser = null;
 
-      // 🚀 حتی با session NULL، Mini-Request را trigger کن اگر profile داریم
-      Logger.info(
-        '🚀 [AUTH LISTENER] ===== TRIGGERING MINI-REQUEST WITH PROFILE ONLY =====',
-      );
-      try {
-        Logger.info(
-          '🔍 [AUTH LISTENER] Calling AppStateManager.triggerMiniRequestAfterLogin...',
-        );
-        await AppStateManager().triggerMiniRequestAfterLogin();
-        Logger.info('✅ [AUTH LISTENER] Mini-Request trigger completed');
-      } catch (e) {
-        Logger.error('❌ [AUTH LISTENER] Failed to trigger Mini-Request', e);
-        Logger.info('❌ [AUTH LISTENER] Error type: ${e.runtimeType}');
-      }
+      // Mini-Request حذف شده است - دیگر نیازی به trigger نیست
 
       notifyListeners();
     } else {
@@ -587,16 +558,7 @@ class AuthService extends ChangeNotifier {
         Logger.info(
           '🚀 [LOGIN] ===== TRIGGERING MINI-REQUEST AFTER LOGIN (NO SESSION) =====',
         );
-        try {
-          Logger.info(
-            '🔍 [LOGIN] Calling AppStateManager.triggerMiniRequestAfterLogin...',
-          );
-          await AppStateManager().triggerMiniRequestAfterLogin();
-          Logger.info('✅ [LOGIN] Mini-Request trigger completed');
-        } catch (e) {
-          Logger.error('❌ [LOGIN] Failed to trigger Mini-Request', e);
-          Logger.info('❌ [LOGIN] Error type: ${e.runtimeType}');
-        }
+        // Mini-Request حذف شده است - دیگر نیازی به trigger نیست
       }
     } catch (e) {
       String? currentRoute;

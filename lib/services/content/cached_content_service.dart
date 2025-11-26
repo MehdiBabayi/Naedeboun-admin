@@ -9,22 +9,20 @@ import '../../models/content/lesson_video.dart';
 import '../../models/content/step_by_step_pdf.dart';
 import '../../models/content/provincial_sample_pdf.dart';
 import '../../utils/logger.dart';
-// Mini-Request triggers are handled at higher layers; this service is Hive-only
-
-/// خدمت کش شده برای محتوا - استفاده از Mini-Request Hive boxes
+// این سرویس برای سازگاری با کدهای قدیمی باقی مانده است
+// Mini-Request حذف شده و این سرویس دیگر استفاده نمی‌شود
 class CachedContentService {
   static final ContentService _contentService = ContentService(
     Supabase.instance.client,
   );
   static final _supabase = Supabase.instance.client;
 
-  /// دریافت نام Box برای grade مشخص (Mini-Request)
+  /// دریافت نام Box برای grade مشخص (برای سازگاری - دیگر استفاده نمی‌شود)
   static String _getMiniRequestBoxName(int gradeId, int? trackId) {
     return 'grade_${gradeId}_${trackId ?? "null"}_content';
   }
 
-  /// دریافت درس‌ها از Mini-Request Hive Box
-  /// استراتژی جدید: فقط از Hive (Mini-Request مدیریت می‌کند)
+  /// دریافت درس‌ها از Hive Box (برای سازگاری - دیگر استفاده نمی‌شود)
   static Future<List<Subject>> getSubjectsForUser({
     required int gradeId,
     int? trackId,
@@ -205,7 +203,7 @@ class CachedContentService {
 
     return await AppCacheManager.getCachedDataWithAutoTTL(cacheKey, () async {
       final data = await _supabase
-          .from('step_by_step_pdfs')
+          .from('book_answer_pdfs')
           .select()
           .eq('id', id)
           .eq('active', true)

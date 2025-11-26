@@ -21,13 +21,11 @@ import 'services/refresh/refresh_manager.dart';
 import 'models/content/subject.dart';
 import 'services/navigation/app_navigator.dart';
 import 'widgets/dev/dev_settings_button.dart';
-import 'package:nardeboun/screens/force_update_screen.dart';
 import 'package:nardeboun/services/settings_service.dart';
 import 'theme/app_theme.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'services/content/book_cover_service.dart';
-import 'services/mini_request/mini_request_logger.dart';
 import 'services/image_cache/smart_image_cache_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'utils/logger.dart';
@@ -107,8 +105,7 @@ void main() async {
     anonKey: APIKeys.supaBaseAnonKey,
   );
 
-  // 📸 Initialize Smart Image Cache System BEFORE Mini-Request to ensure listeners are ready
-  MiniRequestLogger.instance.init();
+  // 📸 Initialize Smart Image Cache System
   SmartImageCacheService.instance.init();
 
   // ⚙️ تنظیم imageCache برای جلوگیری از buffer overflow
@@ -119,7 +116,6 @@ void main() async {
   // 📚 Initialize BookCoverService
   await BookCoverService.instance.init();
 
-  // ⚠️ MiniRequestService.init() moved to AppStateManager to prevent double execution
 
   final versionCheckResult = await SettingsService.instance.checkVersion();
 
@@ -152,14 +148,7 @@ class _AppWrapperState extends State<AppWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.versionCheckResult.forceUpdate) {
-      return const MaterialApp(
-        home: ForceUpdateScreen(),
-        debugShowCheckedModeBanner: false,
-      );
-    }
-
-    // Render the app immediately; initialization continues in background
+    // 🚫 اجبار به بروزرسانی در پنل ادمین غیرفعال شده و صرفاً در نسخه محصول اعمال می‌شود.
     return const MyApp();
   }
 }

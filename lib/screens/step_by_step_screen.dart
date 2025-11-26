@@ -25,7 +25,7 @@ class StepByStepScreen extends StatefulWidget {
 
 class _StepByStepScreenState extends State<StepByStepScreen> {
   List<Subject> _subjects = [];
-  Map<dynamic, List<StepByStepPdf>> _pdfsBySubject = {};
+  Map<String, List<StepByStepPdf>> _pdfsBySubject = {};
   bool _loading = true;
 
   @override
@@ -161,11 +161,10 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     Logger.info('📚 [STEP-BY-STEP] بارگذاری PDF‌ها برای grade_id: $gradeId, track_id: $trackId');
     
     final pdfsData = await supabase
-        .from('step_by_step_pdfs')
+        .from('book_answer_pdfs')
         .select('*')
         .eq('grade_id', gradeId)
         .eq('active', true)
-        .filter('track_id', trackId == null ? 'is' : 'eq', trackId)
         .order('updated_at', ascending: false);
     
     final pdfs = (pdfsData as List<dynamic>)
@@ -174,23 +173,26 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     
     Logger.info('✅ [STEP-BY-STEP] ${pdfs.length} PDF پیدا شد');
 
-    // گروه‌بندی PDF‌ها بر اساس درس
-    final pdfsBySubject = <dynamic, List<StepByStepPdf>>{};
+    // گروه‌بندی PDF‌ها بر اساس bookId (slug) - نه id
+    final pdfsBySubject = <String, List<StepByStepPdf>>{};
     for (final pdf in pdfs) {
-      pdfsBySubject.putIfAbsent(pdf.subjectId, () => []).add(pdf);
+      // pdf.subjectId در واقع bookId (String) است
+      final bookId = pdf.subjectId;
+      pdfsBySubject.putIfAbsent(bookId, () => []).add(pdf);
     }
 
     // اطمینان از حضور همه دروسی که PDF دارند در لیست subjects
-    final pdfSubjectIds = pdfsBySubject.keys.toSet();
-    final existingIds = subjects.map((s) => s.id).toSet();
-    for (final id in pdfSubjectIds) {
-      if (!existingIds.contains(id)) {
+    final pdfBookIds = pdfsBySubject.keys.toSet();
+    final existingSlugs = subjects.map((s) => s.slug).where((s) => s.isNotEmpty).toSet();
+    for (final bookId in pdfBookIds) {
+      if (!existingSlugs.contains(bookId)) {
+        // اگر bookId در subjects نبود، یک Subject جدید با slug=bookId بساز
         subjects.add(
           Subject(
-            id: id,
-            name: _fallbackSubjectNames[id] ?? 'درس ${id}',
-            slug: '',
-            iconPath: '',
+            id: subjects.length + 1000, // یک id موقت
+            name: _getSubjectNameFromBookId(bookId),
+            slug: bookId,
+            iconPath: 'assets/images/icon-darsha/$bookId.png',
             bookCoverPath: '',
             active: true,
           ),
@@ -200,8 +202,8 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
 
     // سورت کردن subjects: اولویت با موجود ها (با PDF)
     subjects.sort((a, b) {
-      final aHasPdfs = pdfsBySubject[a.id]?.isNotEmpty ?? false;
-      final bHasPdfs = pdfsBySubject[b.id]?.isNotEmpty ?? false;
+      final aHasPdfs = pdfsBySubject[a.slug]?.isNotEmpty ?? false;
+      final bHasPdfs = pdfsBySubject[b.slug]?.isNotEmpty ?? false;
 
       // اگر a موجود و b موجود نیست → a اول (بالا)
       if (aHasPdfs && !bHasPdfs) return -1;
@@ -234,6 +236,30 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
     10: 'انگلیسی',
     14: 'دینی',
   };
+
+  // تبدیل bookId به نام درس
+  String _getSubjectNameFromBookId(String bookId) {
+    const bookIdToName = {
+      'riazi': 'ریاضی',
+      'fizik': 'فیزیک',
+      'shimi': 'شیمی',
+      'zist': 'زیست',
+      'olom': 'علوم',
+      'arabi': 'عربی',
+      'farsi': 'فارسی',
+      'dini': 'دینی',
+      'zaban': 'زبان',
+      'englisi': 'انگلیسی',
+      'hendese': 'هندسه',
+      'gosaste': 'گسسته',
+      'amar': 'آمار',
+      'barname': 'برنامه‌نویسی',
+      'mantegh': 'منطق',
+      'payam': 'پیام',
+      'quran': 'قرآن',
+    };
+    return bookIdToName[bookId] ?? bookId;
+  }
 
   // آیکون‌های پیش‌فرض برای زمانی که iconPath/slug نداریم
   static const Map<int, String> _fallbackSubjectIcons = {
@@ -368,8 +394,9 @@ class _StepByStepScreenState extends State<StepByStepScreen> {
                                   itemCount: _subjects.length,
                                   itemBuilder: (ctx, i) {
                                     final subject = _subjects[i];
+                                    // استفاده از slug (bookId) به جای id
                                     final pdfs =
-                                        _pdfsBySubject[subject.id] ?? [];
+                                        _pdfsBySubject[subject.slug] ?? [];
                                     return _buildSubjectCard(subject, pdfs);
                                   },
                                 ),

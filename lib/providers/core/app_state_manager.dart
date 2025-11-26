@@ -25,8 +25,6 @@ class AppStateManager extends ChangeNotifier {
 
   // State variables
   bool _isInitialized = false;
-  bool _hasTriggeredMiniRequest =
-      false; // Flag to prevent re-triggering Mini-Request
   String? _currentRoute;
   final Map<String, dynamic> _globalState = {};
   NetworkStatusModel _networkStatus = NetworkStatusModel(
@@ -142,8 +140,6 @@ class AppStateManager extends ChangeNotifier {
     _isInitialized = true;
     Logger.info('✅ [APP-STATE] Initialization completed');
 
-    // 🚫 Mini-Request در پنل ادمین غیرفعال شده است.
-    Logger.info('ℹ️ [APP-STATE] Mini-Request is disabled in admin panel');
 
     Logger.info('✅ [APP-STATE] ===== INITIALIZATION COMPLETED =====');
     notifyListeners();
@@ -156,9 +152,9 @@ class AppStateManager extends ChangeNotifier {
   }
 
   /// 🚀 Trigger Mini-Request manually (برای استفاده بعد از login)
+  /// این متد برای سازگاری با کدهای قدیمی باقی مانده است اما هیچ کاری انجام نمی‌دهد.
   Future<void> triggerMiniRequestAfterLogin() async {
-    // در پنل ادمین دیگر Mini-Request نداریم؛ این متد فقط برای سازگاری باقی مانده است.
-    Logger.info('ℹ️ [APP-STATE] triggerMiniRequestAfterLogin() called but Mini-Request is disabled');
+    // Mini-Request حذف شده است - این متد فقط برای سازگاری باقی مانده
   }
 
   /// تنظیم state سراسری

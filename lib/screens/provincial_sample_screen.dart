@@ -28,7 +28,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   List<ProvincialSamplePdf> _filteredPdfs = [];
   List<Subject> _subjects = [];
   bool _loading = true;
-  dynamic _selectedSubjectId = 0; // 0 = همه (یا '0')
+  dynamic _selectedSubjectId = 0; // 0 = همه، String = bookId
 
   final List<Color> _colors = [
     Colors.green,
@@ -66,7 +66,6 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
         .select('*')
         .eq('grade_id', gradeId)
         .eq('active', true)
-        .filter('track_id', trackId == null ? 'is' : 'eq', trackId)
         .order('updated_at', ascending: false);
     
     final pdfs = (pdfsData as List<dynamic>)
@@ -87,11 +86,33 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   void _filterBySubject(dynamic subjectId) {
     setState(() {
       _selectedSubjectId = subjectId;
-      if (subjectId == 0) {
+      if (subjectId == 0 || subjectId == '0') {
         _filteredPdfs = _pdfs;
       } else {
+        // subjectId می‌تواند int (قدیمی) یا String (bookId) باشد
         _filteredPdfs = _pdfs
-            .where((pdf) => pdf.subjectId == subjectId)
+            .where((pdf) {
+              if (subjectId is String) {
+                // اگر String است، با bookId مقایسه کن
+                return pdf.subjectId == subjectId;
+              } else if (subjectId is int) {
+                // اگر int است، با bookId مقایسه کن (برای سازگاری قدیمی)
+                // اما بهتر است از slug استفاده کنیم
+                final subject = _subjects.firstWhere(
+                  (s) => s.id == subjectId,
+                  orElse: () => Subject(
+                    id: 0,
+                    name: '',
+                    slug: '',
+                    iconPath: '',
+                    bookCoverPath: '',
+                    active: true,
+                  ),
+                );
+                return pdf.subjectId == subject.slug;
+              }
+              return false;
+            })
             .toList();
       }
     });
@@ -113,7 +134,47 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   String _getSubjectName(dynamic subjectId) {
     if (subjectId == 0 || subjectId == '0') return 'همه';
 
-    // اگر subjectId عدد است (قدیمی)
+    // اگر subjectId رشته است (bookId - استاندارد جدید)
+    if (subjectId is String) {
+      // ابتدا سعی کن از لیست subjects پیدا کنی
+      final subject = _subjects.firstWhere(
+        (s) => s.slug == subjectId,
+        orElse: () => Subject(
+          id: 0,
+          name: '',
+          slug: subjectId,
+          iconPath: '',
+          bookCoverPath: '',
+          active: true,
+        ),
+      );
+      if (subject.name.isNotEmpty) {
+        return subject.name;
+      }
+      // اگر پیدا نشد، از mapping استفاده کن
+      const bookIdToName = {
+        'riazi': 'ریاضی',
+        'fizik': 'فیزیک',
+        'shimi': 'شیمی',
+        'zist': 'زیست',
+        'olom': 'علوم',
+        'arabi': 'عربی',
+        'farsi': 'فارسی',
+        'dini': 'دینی',
+        'zaban': 'زبان',
+        'englisi': 'انگلیسی',
+        'hendese': 'هندسه',
+        'gosaste': 'گسسته',
+        'amar': 'آمار',
+        'barname': 'برنامه‌نویسی',
+        'mantegh': 'منطق',
+        'payam': 'پیام',
+        'quran': 'قرآن',
+      };
+      return bookIdToName[subjectId] ?? subjectId;
+    }
+
+    // اگر subjectId عدد است (قدیمی - برای سازگاری)
     if (subjectId is int) {
       final subject = _subjects.firstWhere(
         (s) => s.id == subjectId,
@@ -127,31 +188,6 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
         ),
       );
       return subject.name;
-    }
-
-    // اگر subjectId رشته است (جدید - bookId)
-    if (subjectId is String) {
-      // از _subjectNameToId استفاده کنیم اگر موجود باشد
-      final subjectNames = _subjects.map((s) => s.name).toSet();
-      // یا از یک mapping ساده استفاده کنیم
-      final bookIdToName = {
-        'riazi': 'ریاضی',
-        'fizik': 'فیزیک',
-        'shimi': 'شیمی',
-        'zist': 'زیست',
-        'olom': 'علوم',
-        'arabi': 'عربی',
-        'farsi': 'فارسی',
-        'dini': 'دینی',
-        'zaban': 'زبان',
-        'hendese': 'هندسه',
-        'gosaste': 'گسسته',
-        'amar': 'آمار',
-        'barname': 'برنامه‌نویسی',
-        'mantegh': 'منطق',
-        'payam': 'پیام',
-      };
-      return bookIdToName[subjectId] ?? subjectId;
     }
 
     return 'نامشخص';
@@ -262,22 +298,23 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
                                       _buildSubjectTab('همه', 0),
                                       ...() {
                                         // تب‌ها بر اساس PDFهای موجود ساخته می‌شوند
-                                        final ids = _pdfs
-                                            .map((p) => p.subjectId)
+                                        // استفاده از bookId (String) به جای id
+                                        final bookIds = _pdfs
+                                            .map((p) => p.subjectId as String)
                                             .toSet()
                                             .toList();
                                         // مرتب‌سازی: ریاضی اول سپس بر اساس نام موضوع
-                                        ids.sort((a, b) {
+                                        bookIds.sort((a, b) {
                                           final an = _getSubjectName(a);
                                           final bn = _getSubjectName(b);
                                           if (an == 'ریاضی') return -1;
                                           if (bn == 'ریاضی') return 1;
                                           return an.compareTo(bn);
                                         });
-                                        return ids
-                                            .map((id) => _buildSubjectTab(
-                                                  _getSubjectName(id),
-                                                  id,
+                                        return bookIds
+                                            .map((bookId) => _buildSubjectTab(
+                                                  _getSubjectName(bookId),
+                                                  bookId,
                                                 ))
                                             .toList();
                                       }(),

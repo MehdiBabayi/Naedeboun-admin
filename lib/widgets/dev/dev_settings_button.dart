@@ -339,7 +339,17 @@ class _DevSettingsDialogState extends State<DevSettingsDialog> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _clearAllMiniRequestData(context),
+                          onPressed: () {
+                            // Mini-Request حذف شده است
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'ℹ️ Mini‑Request حذف شده است',
+                                  textDirection: TextDirection.rtl,
+                                ),
+                              ),
+                            );
+                          },
                           icon: const Icon(Icons.delete_sweep, size: 16),
                           label: const Text('پاک کردن دیتای Mini‑Request'),
                           style: ElevatedButton.styleFrom(
@@ -476,20 +486,6 @@ class _DevSettingsDialogState extends State<DevSettingsDialog> {
     }
   }
 
-  /// پاک کردن دیتای Mini‑Request برای پایه/رشته فعلی + کش‌های عمومی (در نسخهٔ جدید ادمین عملاً کاری انجام نمی‌دهد)
-  Future<void> _clearAllMiniRequestData(BuildContext context) async {
-    // در پنل ادمین دیگر Mini‑Request و Boxهای Hive مرتبط استفاده نمی‌شوند.
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'ℹ️ Mini‑Request دیگر استفاده نمی‌شود؛ دیتای خاصی برای پاک‌سازی وجود ندارد',
-            textDirection: TextDirection.rtl,
-          ),
-        ),
-      );
-    }
-  }
 
   /// نمایش Dialog وضعیت‌ها
   void _showStatusDialog(BuildContext context) {

@@ -13,6 +13,88 @@
           },
           "2": {
             "title": "فصل 2: عددهای حقیقی"
+          },
+          "3": {
+            "title": "فصل 3: معادلات"
+          },
+          "4": {
+            "title": "فصل 4: مرور کلی"
+          }
+        }
+      }
+    },
+    "2": {
+      "arabi": {
+        "title": "عربی",
+        "icon": "assets/images/icon-darsha/arabi.png",
+        "cover": "assets/images/book-covers/grade9/arabi.png",
+        "chapter_type": "درس",
+        "chapters": {
+          "1": {
+            "title": "درس 1: المفردات"
+          },
+          "3": {
+            "title": "درس 3: القواعد المتقدمة"
+          },
+          "4": {
+            "title": "درس 4: مرور کلی"
+          }
+        }
+      }
+    },
+    "3": {
+      "englisi": {
+        "title": "انگلیسی",
+        "icon": "assets/images/icon-darsha/englisi.png",
+        "cover": "assets/images/book-covers/grade9/zaban.png",
+        "chapter_type": "درس",
+        "chapters": {
+          "1": {
+            "title": "Unit 1: Greetings"
+          },
+          "3": {
+            "title": "Unit 3: School Life"
+          },
+          "4": {
+            "title": "Unit 4: مرور کلی"
+          }
+        }
+      }
+    },
+    "4": {
+      "olom": {
+        "title": "علوم",
+        "icon": "assets/images/icon-darsha/olom.png",
+        "cover": "assets/images/book-covers/grade9/olom.png",
+        "chapter_type": "فصل",
+        "chapters": {
+          "1": {
+            "title": "فصل 1: مواد و تغییرات"
+          },
+          "4": {
+            "title": "فصل 4: نیرو و حرکت"
+          },
+          "5": {
+            "title": "فصل 5: آزمایشگاه"
+          }
+        }
+      }
+    },
+    "5": {
+      "quran": {
+        "title": "قرآن",
+        "icon": "assets/images/icon-darsha/quran.png",
+        "cover": "assets/images/book-covers/grade9/quran.png",
+        "chapter_type": "درس",
+        "chapters": {
+          "1": {
+            "title": "درس 1: مفاهیم سوره لقمان"
+          },
+          "2": {
+            "title": "درس 2: تدبر در آیات منتخب"
+          },
+          "3": {
+            "title": " درس 3: فضایل سوره حجرات همراه با تفسیر استاد الهی قمشه ای "
           }
         }
       }
