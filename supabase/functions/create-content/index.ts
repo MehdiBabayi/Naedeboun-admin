@@ -14,12 +14,14 @@ interface ContentInput {
   title: string;
   type: 'note' | 'book' | 'exam';
   teacher: string;
-  embed_url: string;
+  embed_url?: string;
   direct_url?: string;
   pdf_url?: string;
   duration: number;
   thumbnail_url?: string;
   active?: boolean;
+  likes_count?: number;
+  views_count?: number;
 }
 
 serve(async (req) => {
@@ -33,10 +35,10 @@ serve(async (req) => {
     // ✅ Validation: بررسی فیلدهای الزامی
     if (!input.grade_id || !input.book_id || !input.chapter_id ||
         input.step_number == null || input.step_number < 1 ||
-        !input.title || !input.type || !input.teacher || !input.embed_url ||
+        !input.title || !input.type || !input.teacher ||
         input.duration == null || input.duration <= 0) {
       return new Response(
-        JSON.stringify({ error: "فیلدهای الزامی: grade_id, book_id, chapter_id, step_number (>= 1), title, type, teacher, embed_url, duration (> 0)" }),
+        JSON.stringify({ error: "فیلدهای الزامی: grade_id, book_id, chapter_id, step_number (>= 1), title, type, teacher, duration (> 0)" }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -64,14 +66,14 @@ serve(async (req) => {
         title: input.title,
         type: input.type,
         teacher: input.teacher,
-        embed_url: input.embed_url,
+        embed_url: input.embed_url || null,
         direct_url: input.direct_url || null,
         pdf_url: input.pdf_url || null,
         duration: input.duration,
         thumbnail_url: input.thumbnail_url || null,
         active: input.active !== false,
-        likes_count: 0,
-        views_count: 0
+        likes_count: input.likes_count ?? 0,
+        views_count: input.views_count ?? 0
       })
       .select('video_id')
       .single();
