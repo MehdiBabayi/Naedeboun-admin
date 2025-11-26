@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:nardeboun/models/content/chapter.dart';
 import 'package:nardeboun/models/content/lesson_video.dart';
@@ -746,10 +747,60 @@ class _ChapterScreenState extends State<ChapterScreen> {
     }
   }
 
-  /// نمایش پاپ‌آپ جزئیات ویدیو با تمام فیلدها
-  void _openVideoPopup(LessonVideo video) {
-    final teacherName = video.teacher.isNotEmpty ? video.teacher : 'نامشخص';
+  String _translateLessonVideoField(String key) {
+    const labels = {
+      'video_id': 'شناسه ویدیو',
+      'grade_id': 'شناسه پایه',
+      'book_id': 'شناسه کتاب',
+      'chapter_id': 'شناسه فصل',
+      'step_number': 'شماره پله',
+      'title': 'عنوان',
+      'type': 'نوع محتوا',
+      'teacher': 'استاد',
+      'embed_url': 'لینک Embed',
+      'direct_url': 'لینک مستقیم',
+      'pdf_url': 'لینک PDF',
+      'thumbnail_url': 'لینک تصویر',
+      'duration': 'مدت زمان (ثانیه)',
+      'likes_count': 'تعداد لایک',
+      'views_count': 'تعداد بازدید',
+      'active': 'وضعیت فعال',
+      'created_at': 'تاریخ ایجاد',
+      'updated_at': 'تاریخ بروزرسانی',
+    };
+    return labels[key] ?? key;
+  }
 
+  String _formatDynamicValue(dynamic value) {
+    if (value == null) return '-';
+    if (value is bool) return value ? 'true' : 'false';
+    if (value is DateTime) return value.toIso8601String();
+    if (value is Map || value is List) {
+      return const JsonEncoder.withIndent('  ').convert(value);
+    }
+    return value.toString();
+  }
+
+  /// نمایش پاپ‌آپ جزئیات ویدیو با تمام فیلدها
+  Future<void> _openVideoPopup(LessonVideo video) async {
+    Map<String, dynamic> rawData = video.toJson();
+
+    try {
+      Logger.info('📡 [VIDEO-DETAIL] Fetching latest row for video_id=${video.videoId}');
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('lesson_videos')
+          .select('*')
+          .eq('video_id', video.videoId)
+          .single();
+
+      rawData = Map<String, dynamic>.from(response as Map);
+      Logger.info('✅ [VIDEO-DETAIL] Loaded raw row with ${rawData.length} columns');
+    } catch (e, stack) {
+      Logger.error('❌ [VIDEO-DETAIL] Failed to load raw row from lesson_videos', e);
+      Logger.debug(stack.toString());
+      // از داده‌های مدل به عنوان fallback استفاده می‌کنیم
+    }
     Logger.info('📹 [VIDEO-DETAIL] نمایش جزئیات ویدیو ID: ${video.id}');
 
     showDialog(
@@ -768,79 +819,25 @@ class _ChapterScreenState extends State<ChapterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // اطلاعات پایه
-                  _kv('شناسه ویدیو', video.id.toString()),
-                  _kv('شناسه فصل', video.chapterId.toString()),
-                  _kv('شماره فصل', video.chapterOrder.toString()),
-                  _kv('عنوان فصل', video.chapterTitle),
-                  _kv('شماره درس', video.lessonOrder.toString()),
-                  _kv('عنوان درس', video.lessonTitle),
-                  _kv('استاد', teacherName),
-                  // ✅ حذف شد: شناسه استاد دیگر وجود ندارد، نام استاد مستقیماً در video.teacher ذخیره می‌شود
-                  _kv('نوع محتوا', _getStyleName(video.style)),
-                  _kv('وضعیت محتوا', video.contentStatus),
-                  _kv('فعال', video.active ? 'بله' : 'خیر'),
-                  
-                  // لینک‌ها
-                  _kv(
-                    'لینک آپارات',
-                    (video.aparatUrl != null && video.aparatUrl!.isNotEmpty) ? video.aparatUrl! : '-',
-                  ),
-                  
-                  // Embed HTML (کد کامل)
-                  if (video.embedHtml != null && video.embedHtml!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'کد Embed HTML:',
-                            style: TextStyle(
-                              fontFamily: 'IRANSansXFaNum',
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: SelectableText(
-                              video.embedHtml!,
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  const Text(
+                    'داده‌های خام جدول lesson_videos',
+                    style: TextStyle(
+                      fontFamily: 'IRANSansXFaNum',
+                      fontWeight: FontWeight.bold,
                     ),
-                  
-                  // PDF ها
-                  if (video.notePdfUrl != null && video.notePdfUrl!.isNotEmpty)
-                    _kv('لینک PDF جزوه', video.notePdfUrl!),
-                  if (video.exercisePdfUrl != null &&
-                      video.exercisePdfUrl!.isNotEmpty)
-                    _kv('لینک PDF نمونه سوال', video.exercisePdfUrl!),
-                  
-                  // سایر اطلاعات
-                  _kv('مدت زمان', _formatDuration(video.durationSec)),
-                  _kv('تعداد بازدید', video.viewCount.toString()),
-                  _kv(
-                    'تگ‌ها',
-                    video.tags.isNotEmpty ? video.tags.join(', ') : '-',
                   ),
-                  _kv('اجازه چرخش', video.allowLandscape ? 'بله' : 'خیر'),
+                  const SizedBox(height: 8),
+                  ...rawData.entries.map(
+                    (entry) => _kv(
+                      '${_translateLessonVideoField(entry.key)} (${entry.key})',
+                      _formatDynamicValue(entry.value),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
-            // دکمه ویرایش (سبز)
             ElevatedButton(
               onPressed: () {
                 Logger.info('✏️ [VIDEO-DETAIL] باز کردن صفحه ویرایش برای ویدیو ID: ${video.id}');
@@ -850,11 +847,9 @@ class _ChapterScreenState extends State<ChapterScreen> {
                     builder: (context) => VideoEditScreen(video: video),
                   ),
                 ).then((result) {
-                  // اگر ویرایش موفق بود، لیست را رفرش کن و teachers map را به‌روزرسانی کن
                   if (result == true) {
                     Logger.info('🔄 [VIDEO-DETAIL] رفرش لیست ویدیوها بعد از ویرایش');
-                    // ✅ حذف شد: دیگر نیازی به به‌روزرسانی teachers map نیست
-                    _load(); // رفرش لیست ویدیوها
+                    _load();
                   }
                 });
               },
@@ -867,7 +862,6 @@ class _ChapterScreenState extends State<ChapterScreen> {
                 style: TextStyle(fontFamily: 'IRANSansXFaNum'),
               ),
             ),
-            // دکمه حذف (قرمز)
             ElevatedButton(
               onPressed: () {
                 Logger.info('🗑️ [VIDEO-DETAIL] باز کردن تایید حذف برای ویدیو ID: ${video.id}');

@@ -29,7 +29,7 @@ class _ProvincialSampleScreenState extends State<ProvincialSampleScreen> {
   List<Subject> _subjects = [];
   bool _loading = true;
   dynamic _selectedSubjectId = 0; // 0 = همه، String = bookId
-  Map<String, String> _bookIdToName = {}; // bookId -> title از JSON
+  Map<String, String> _bookIdToName = {}; // bookId -> title خوانده‌شده از JSON
 
   final List<Color> _colors = [
     Colors.green,
