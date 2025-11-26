@@ -239,7 +239,7 @@ class _VideoUploadScreenState extends State<VideoUploadScreen> {
         .map(
           (entry) => _DropdownOption<String>(
             value: entry.key,
-            label: entry.value,
+            label: '${entry.value} (${entry.key})',
           ),
         )
         .toList();

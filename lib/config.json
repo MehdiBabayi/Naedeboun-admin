@@ -3,7 +3,7 @@
   "themeMode": "light",
 
   "_comment_devMode": "true = حالت توسعه (کد OTP پیش‌فرض 000000، عدم ارسال SMS), false = حالت تولید (ارسال SMS واقعی)",
-  "devMode": true,
+  "devMode": false,
 
   "_comment_debugCheckModeBanner": "true = نمایش بنر دیباگ در گوشه بالا راست, false = مخفی کردن بنر دیباگ",
   "debugCheckModeBanner": false,

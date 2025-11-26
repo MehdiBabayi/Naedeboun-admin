@@ -14,7 +14,7 @@ class VideoDeleteService {
       Logger.info('🗑️ [VIDEO-DELETE] شروع حذف ویدیو ID: $lessonVideoId');
 
       final payload = {
-        'lesson_video_id': lessonVideoId,
+        'video_id': lessonVideoId,
       };
 
       final response = await _supabase.functions.invoke(
